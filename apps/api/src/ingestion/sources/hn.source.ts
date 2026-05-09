@@ -73,7 +73,11 @@ export class HnWhoIsHiringSource implements JobSource {
         if (opts.since && postedAt < opts.since) continue;
 
         const text = decodeAndStrip(hit.comment_text);
-        const firstLine = text.split('\n').find((l) => l.trim().length > 0)?.trim() ?? 'Job post';
+        const firstLine =
+          text
+            .split('\n')
+            .find((l) => l.trim().length > 0)
+            ?.trim() ?? 'Job post';
         const { company, title } = extractCompanyAndTitle(firstLine);
         const remote = /\bremote\b/i.test(text);
 
@@ -82,7 +86,7 @@ export class HnWhoIsHiringSource implements JobSource {
           externalId: hit.objectID,
           title,
           company,
-          location: null,            // Phase 2 LLM extraction will populate.
+          location: null, // Phase 2 LLM extraction will populate.
           remote,
           salaryMin: null,
           salaryMax: null,

@@ -23,7 +23,7 @@ interface AshbyJob {
   employmentType?: string;
   location?: string;
   secondaryLocations?: Array<{ location: string }>;
-  publishedAt: string;         // ISO 8601 timestamp from Ashby
+  publishedAt: string; // ISO 8601 timestamp from Ashby
   jobUrl: string;
   applicationUrl?: string;
   isRemote?: boolean;
@@ -81,9 +81,7 @@ export class AshbySource implements JobSource {
           // a malformed value, skip the row instead of polluting the DB
           // (or crashing the upsert with "Invalid Date").
           if (Number.isNaN(postedAt.getTime())) {
-            this.logger.warn(
-              `Ashby ${company}/${raw.id}: missing/invalid publishedAt, skipping`,
-            );
+            this.logger.warn(`Ashby ${company}/${raw.id}: missing/invalid publishedAt, skipping`);
             continue;
           }
           if (opts.since && postedAt < opts.since) continue;

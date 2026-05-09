@@ -31,10 +31,7 @@ export class CvsController {
     },
   })
   @UseInterceptors(FileInterceptor('file'))
-  async upload(
-    @CurrentUser() user: AuthenticatedUser,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
+  async upload(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file uploaded under field "file"');
     return this.cvs.uploadCv({
       userId: user.id,

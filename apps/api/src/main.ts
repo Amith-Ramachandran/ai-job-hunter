@@ -27,9 +27,9 @@ async function bootstrap() {
 
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,           // strip unknown fields
+      whitelist: true, // strip unknown fields
       forbidNonWhitelisted: true, // 400 if unknown fields present
-      transform: true,            // auto-transform payloads to DTO instances
+      transform: true, // auto-transform payloads to DTO instances
       transformOptions: { enableImplicitConversion: true },
     }),
   );

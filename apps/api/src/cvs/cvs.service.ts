@@ -15,7 +15,7 @@ import { S3StorageService } from './storage/s3-storage.service';
 const ACCEPTED_MIME_TYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-  'application/msword',                                                        // .doc
+  'application/msword', // .doc
   'text/plain',
 ]);
 
@@ -30,12 +30,7 @@ export class CvsService {
     private readonly storage: S3StorageService,
   ) {}
 
-  async uploadCv(params: {
-    userId: string;
-    filename: string;
-    contentType: string;
-    body: Buffer;
-  }) {
+  async uploadCv(params: { userId: string; filename: string; contentType: string; body: Buffer }) {
     if (!ACCEPTED_MIME_TYPES.has(params.contentType)) {
       // Throwing as ForbiddenException because UnsupportedMediaType isn't a
       // built-in Nest exception class; "forbidden" reads cleanly to the client.

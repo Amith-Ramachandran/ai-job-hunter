@@ -7,12 +7,7 @@
  * Combined with the @CurrentUser() decorator, route handlers receive a
  * fully-typed AuthenticatedUser.
  */
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 

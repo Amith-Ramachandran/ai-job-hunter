@@ -25,7 +25,7 @@ export class HealthController {
       // Round-trip query proves DB connection is alive AND queries work,
       // not just that TCP is up.
       await this.prisma.$queryRaw`SELECT 1`;
-    } catch (err) {
+    } catch {
       throw new ServiceUnavailableException({ status: 'down', dependency: 'postgres' });
     }
     return { status: 'ok' };

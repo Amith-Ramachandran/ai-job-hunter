@@ -30,10 +30,7 @@ const SOURCE_PROVIDERS = [
 ];
 
 @Module({
-  imports: [
-    JobsModule,
-    BullModule.registerQueue({ name: INGEST_QUEUE_NAME }),
-  ],
+  imports: [JobsModule, BullModule.registerQueue({ name: INGEST_QUEUE_NAME })],
   providers: [
     IngestionService,
     IngestionProcessor,

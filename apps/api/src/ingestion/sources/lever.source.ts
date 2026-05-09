@@ -15,18 +15,18 @@ import type { FetchOptions, JobSource, NormalizedJob } from './job-source.interf
 
 interface LeverPosting {
   id: string;
-  text: string;                // title
-  createdAt: number;           // epoch ms
+  text: string; // title
+  createdAt: number; // epoch ms
   categories: {
     team?: string;
     location?: string;
     commitment?: string;
     department?: string;
   };
-  description?: string;        // HTML
+  description?: string; // HTML
   descriptionPlain?: string;
   lists?: Array<{ text: string; content: string }>;
-  additional?: string;         // HTML
+  additional?: string; // HTML
   additionalPlain?: string;
   hostedUrl: string;
   applyUrl?: string;
