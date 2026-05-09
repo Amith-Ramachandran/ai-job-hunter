@@ -8,7 +8,14 @@ module.exports = {
     'plugin:react-hooks/recommended',
     'prettier',
   ],
-  ignorePatterns: ['dist', '.eslintrc.cjs', 'playwright-report'],
+  ignorePatterns: [
+    'dist',
+    '.eslintrc.cjs',
+    'playwright-report',
+    // tsc -b emits these next to vite.config.ts; never source.
+    'vite.config.js',
+    'vite.config.d.ts',
+  ],
   parser: '@typescript-eslint/parser',
   plugins: ['react-refresh'],
   rules: {

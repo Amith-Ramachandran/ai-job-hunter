@@ -7,6 +7,10 @@ dist/
 build/
 *.tsbuildinfo
 .next/
+# tsc -b emits these next to vite.config.ts (composite project mode);
+# they're build output, never source, never committed.
+apps/web/vite.config.js
+apps/web/vite.config.d.ts
 
 # Python
 __pycache__/
