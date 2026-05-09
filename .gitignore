@@ -46,10 +46,11 @@ yarn-debug.log*
 coverage/
 .nyc_output/
 
-# Local data / uploads
-uploads/
-storage/
-tmp/
+# Local data / uploads (anchored to repo root so they don't accidentally
+# match same-named source dirs like apps/api/src/cvs/storage/)
+/uploads/
+/storage/
+/tmp/
 
 # Prisma generated client (regenerated on install)
 apps/api/prisma/generated/

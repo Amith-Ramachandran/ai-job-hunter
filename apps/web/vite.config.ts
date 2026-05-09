@@ -1,4 +1,7 @@
-import { defineConfig } from 'vite';
+/// <reference types="vitest" />
+// Use vitest's defineConfig so the `test:` block is type-checked. It's a
+// superset of vite's config — same shape for everything else.
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
