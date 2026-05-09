@@ -52,4 +52,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = 'Button';
 
+// `buttonVariants` is the cva config exported alongside Button so other
+// components (e.g., asChild link buttons) can compose the same styles.
+// This is the standard shadcn/ui pattern; the HMR rule can't see that
+// `buttonVariants` is a constant config object — safe to disable here.
+// eslint-disable-next-line react-refresh/only-export-components
 export { buttonVariants };
