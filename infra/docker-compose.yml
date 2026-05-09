@@ -1,0 +1,110 @@
+# Local-dev infrastructure for AI Career Copilot.
+#
+# Services:
+#   postgres     — primary relational store (users, cvs, jobs, applications)
+#   redis        — backing store for BullMQ queues
+#   redisinsight — web UI for inspecting Redis / BullMQ queues (dev convenience)
+#   localstack   — S3-compatible storage for CV files (mirrors AWS S3 API)
+#   qdrant       — vector database for embeddings (used in Phase 2)
+#
+# All services bind to localhost only. Data persists in named volumes
+# so `docker compose down` keeps state; `docker compose down -v` wipes it.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ajh-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ajh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ajh_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_job_hunter}
+    ports:
+      # Host port shifted to 5433 to avoid conflict with a system-level
+      # Postgres install. Inside the container we still listen on 5432.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ajh}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ajh-redis
+    restart: unless-stopped
+    # BullMQ requires `--maxmemory-policy noeviction` so queue entries are
+    # never evicted under memory pressure (would silently lose jobs).
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-ajh_redis_dev}
+      --maxmemory-policy noeviction
+    ports:
+      # Host port shifted to 6380 to avoid conflict with a system-level Redis.
+      # Inside the container we still listen on 6379.
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-ajh_redis_dev}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: ajh-redisinsight
+    restart: unless-stopped
+    ports:
+      # Browse to http://localhost:5540 once the service is up.
+      - "127.0.0.1:5540:5540"
+    volumes:
+      - redisinsight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  localstack:
+    image: localstack/localstack:3
+    container_name: ajh-localstack
+    restart: unless-stopped
+    environment:
+      # Only enabling S3 for now — keeps the image lean.
+      SERVICES: s3
+      DEBUG: 0
+      # Pre-create the CV bucket on container start.
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+    ports:
+      - "127.0.0.1:4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - ./localstack-init:/etc/localstack/init/ready.d
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ajh-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"   # REST
+      - "127.0.0.1:6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
+  redisinsight_data:
+  localstack_data:
+  qdrant_data:

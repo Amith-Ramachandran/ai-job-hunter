@@ -1,0 +1,107 @@
+# Continuous integration.
+#
+# Runs on every PR against main and every push to main. Three independent
+# jobs (api / web / ai) run in parallel; each is gated on path filters so
+# changes touching only one app don't waste CI minutes on the others.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel in-progress runs for the same PR/branch when a new commit lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      ai: ${{ steps.filter.outputs.ai }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'apps/web/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/ci.yml'
+            ai:
+              - 'apps/ai/**'
+              - '.github/workflows/ci.yml'
+
+  api:
+    needs: detect
+    if: needs.detect.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - working-directory: apps/api
+        run: pnpm prisma generate
+      - working-directory: apps/api
+        run: pnpm lint
+      - working-directory: apps/api
+        run: pnpm test
+      - working-directory: apps/api
+        run: pnpm build
+
+  web:
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - working-directory: apps/web
+        run: pnpm lint
+      - working-directory: apps/web
+        run: pnpm test
+      - working-directory: apps/web
+        run: pnpm build
+
+  ai:
+    needs: detect
+    if: needs.detect.outputs.ai == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - run: ruff check .
+      - run: black --check .
+      - run: pytest -q

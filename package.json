@@ -1,0 +1,44 @@
+{
+  "name": "ai-job-hunter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Career Copilot — backend job-hunt assistant with vector search and chatbot",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:infra": "docker compose -f infra/docker-compose.yml up -d",
+    "dev:infra:down": "docker compose -f infra/docker-compose.yml down",
+    "dev:infra:reset": "docker compose -f infra/docker-compose.yml down -v",
+    "dev:api": "pnpm --filter @ai-job-hunter/api dev",
+    "dev:web": "pnpm --filter @ai-job-hunter/web dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "format": "pnpm -r format",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10"
+  },
+  "lint-staged": {
+    "apps/api/**/*.{ts,js}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "apps/web/**/*.{ts,tsx,js,jsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "apps/ai/**/*.py": [
+      "ruff check --fix",
+      "black"
+    ]
+  },
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

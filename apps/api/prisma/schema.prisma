@@ -1,0 +1,143 @@
+// Prisma schema for AI Career Copilot.
+//
+// Design notes:
+// - `Job.embedding_status` lets the AI service track which postings still need
+//   embeddings without round-tripping through a join table.
+// - `Job` has a unique constraint on (source, externalId) so re-ingesting from
+//   a source is idempotent — UPSERT does the right thing.
+// - `JobScore` is denormalized per (user, cv, job) so we can recompute scores
+//   when the user uploads a new CV without recomputing for old CVs.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  googleSub String   @unique @map("google_sub")
+  email     String   @unique
+  name      String?
+  picture   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cvs          Cv[]
+  applications Application[]
+  scores       JobScore[]
+
+  @@map("users")
+}
+
+model Cv {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  // S3 object key, not a full URL — keeps the URL construction in one place.
+  objectKey   String   @map("object_key")
+  filename    String
+  contentType String   @map("content_type")
+  sizeBytes   Int      @map("size_bytes")
+  // Plain text extracted from the file. Filled in by a follow-up worker
+  // (Phase 2). Nullable on initial insert.
+  parsedText  String?  @map("parsed_text") @db.Text
+  // Structured CV (skills, experience, etc.) — filled by LLM extraction in Phase 2.
+  parsedJson  Json?    @map("parsed_json")
+  version     Int      @default(1)
+  uploadedAt  DateTime @default(now()) @map("uploaded_at")
+
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scores JobScore[]
+
+  @@index([userId])
+  @@map("cvs")
+}
+
+enum EmbeddingStatus {
+  pending
+  processing
+  done
+  failed
+}
+
+model Job {
+  id            String   @id @default(cuid())
+  source        String                                  // 'remotive' | 'greenhouse' | 'hn-who-is-hiring' ...
+  externalId    String   @map("external_id")            // unique within source
+  title         String
+  company       String
+  location      String?
+  remote        Boolean  @default(false)
+  salaryMin     Int?     @map("salary_min")
+  salaryMax     Int?     @map("salary_max")
+  currency      String?
+  // Raw HTML/markdown from the source (kept for debugging and re-extraction).
+  descriptionRaw String  @map("description_raw") @db.Text
+  // Cleaned markdown for display + embedding.
+  descriptionMd  String  @map("description_md") @db.Text
+  applyUrl      String   @map("apply_url")
+  postedAt      DateTime @map("posted_at")
+  ingestedAt    DateTime @default(now()) @map("ingested_at")
+  // Structured fields from LLM extraction (Phase 2).
+  extractedJson Json?    @map("extracted_json")
+  // Tracks the embedding lifecycle for the AI service worker (Phase 2).
+  embeddingStatus EmbeddingStatus @default(pending) @map("embedding_status")
+  embeddedAt    DateTime? @map("embedded_at")
+
+  applications Application[]
+  scores       JobScore[]
+
+  @@unique([source, externalId])
+  @@index([postedAt])
+  @@index([embeddingStatus])
+  @@map("jobs")
+}
+
+model JobScore {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  cvId            String   @map("cv_id")
+  jobId           String   @map("job_id")
+  score           Float
+  // Per-section breakdown (skills, experience, etc.) — filled by Phase 2.
+  scoreBreakdown  Json?    @map("score_breakdown")
+  computedAt      DateTime @default(now()) @map("computed_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cv   Cv   @relation(fields: [cvId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cvId, jobId])
+  @@index([userId, score])
+  @@map("job_scores")
+}
+
+enum ApplicationStatus {
+  saved
+  applied
+  interviewing
+  offer
+  rejected
+  withdrawn
+}
+
+model Application {
+  id        String            @id @default(cuid())
+  userId    String            @map("user_id")
+  jobId     String            @map("job_id")
+  status    ApplicationStatus @default(saved)
+  notes     String?           @db.Text
+  appliedAt DateTime?         @map("applied_at")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+  @@index([userId, status])
+  @@map("applications")
+}
