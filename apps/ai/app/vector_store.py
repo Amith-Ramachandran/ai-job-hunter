@@ -135,7 +135,9 @@ class VectorStore:
         records, _ = await self._client.scroll(
             collection_name=self._cv_collection,
             scroll_filter=qmodels.Filter(
-                must=[qmodels.FieldCondition(key="parent_id", match=qmodels.MatchValue(value=cv_id))]
+                must=[
+                    qmodels.FieldCondition(key="parent_id", match=qmodels.MatchValue(value=cv_id))
+                ]
             ),
             with_payload=True,
             with_vectors=True,

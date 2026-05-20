@@ -22,5 +22,7 @@ async def ready() -> dict[str, str]:
         # Cheap call that proves Qdrant is reachable AND auth (when enabled) works.
         await get_vector_store()._client.get_collections()
     except Exception as err:
-        raise HTTPException(status_code=503, detail={"status": "down", "dependency": "qdrant"}) from err
+        raise HTTPException(
+            status_code=503, detail={"status": "down", "dependency": "qdrant"}
+        ) from err
     return {"status": "ok"}

@@ -72,7 +72,11 @@ def chunk_jd(text: str) -> list[Chunk]:
     """
     splitter = _make_recursive_splitter()
     pieces = splitter.split_text(text.strip())
-    return [Chunk(index=i, text=p, token_count=count_tokens(p)) for i, p in enumerate(pieces) if p.strip()]
+    return [
+        Chunk(index=i, text=p, token_count=count_tokens(p))
+        for i, p in enumerate(pieces)
+        if p.strip()
+    ]
 
 
 # Matches Markdown-style section headings. A CV converted to text often has
@@ -120,17 +124,13 @@ def chunk_cv(text: str) -> list[Chunk]:
     next_idx = 0
     for section in section_texts:
         if count_tokens(section) <= MAX_SECTION_TOKENS:
-            chunks.append(
-                Chunk(index=next_idx, text=section, token_count=count_tokens(section))
-            )
+            chunks.append(Chunk(index=next_idx, text=section, token_count=count_tokens(section)))
             next_idx += 1
         else:
             for piece in splitter.split_text(section):
                 if not piece.strip():
                     continue
-                chunks.append(
-                    Chunk(index=next_idx, text=piece, token_count=count_tokens(piece))
-                )
+                chunks.append(Chunk(index=next_idx, text=piece, token_count=count_tokens(piece)))
                 next_idx += 1
 
     return chunks

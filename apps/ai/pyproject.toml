@@ -46,7 +46,13 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "ASYNC"]
-ignore = ["E501"]  # let black handle line length
+ignore = [
+  "E501",  # let black handle line length
+  # FastAPI's Depends() pattern is intentionally called in argument defaults
+  # — that's how dependency injection wires up. B008 flags it generically;
+  # for FastAPI it's a false positive.
+  "B008",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

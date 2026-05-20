@@ -27,13 +27,7 @@ import { ScoreCvProcessor } from './score-cv.processor';
       { name: SCORE_CV_QUEUE },
     ),
   ],
-  providers: [
-    AiClientService,
-    AiService,
-    EmbedCvProcessor,
-    EmbedJobProcessor,
-    ScoreCvProcessor,
-  ],
+  providers: [AiClientService, AiService, EmbedCvProcessor, EmbedJobProcessor, ScoreCvProcessor],
   controllers: [AiController],
   exports: [AiService],
 })

@@ -144,9 +144,7 @@ export class JobsService {
         orderBy: { score: sortOrder },
         select: { jobId: true },
       });
-      const idsForPage = ordered
-        .slice((page - 1) * pageSize, page * pageSize)
-        .map((r) => r.jobId);
+      const idsForPage = ordered.slice((page - 1) * pageSize, page * pageSize).map((r) => r.jobId);
       if (idsForPage.length === 0) return [];
 
       const fetched = await this.prisma.job.findMany({
@@ -172,10 +170,7 @@ export class JobsService {
    * Nullable columns (location) use NULLS LAST so unset values sink to the
    * bottom regardless of direction — standard table-sort UX expectation.
    */
-  private buildOrderBy(
-    sortBy: SortKey,
-    sortOrder: SortOrder,
-  ): Prisma.JobOrderByWithRelationInput {
+  private buildOrderBy(sortBy: SortKey, sortOrder: SortOrder): Prisma.JobOrderByWithRelationInput {
     switch (sortBy) {
       case 'title':
         return { title: sortOrder };

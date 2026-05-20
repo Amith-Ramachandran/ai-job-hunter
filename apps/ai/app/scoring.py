@@ -74,12 +74,8 @@ async def score_cv_against_jobs(
     for job_id, sims in per_job_scores.items():
         sims.sort(reverse=True)
         top = sims[:top_n_per_job]
-        results.append(
-            JobScore(job_id=job_id, score=max(top), matched_chunks=len(sims))
-        )
+        results.append(JobScore(job_id=job_id, score=max(top), matched_chunks=len(sims)))
 
     results.sort(key=lambda r: r.score, reverse=True)
-    log.info(
-        "scoring.computed", cv_id=cv_id, jobs_scored=len(results), cv_chunks=len(cv_chunks)
-    )
+    log.info("scoring.computed", cv_id=cv_id, jobs_scored=len(results), cv_chunks=len(cv_chunks))
     return results
