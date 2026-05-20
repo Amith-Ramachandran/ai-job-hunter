@@ -168,4 +168,4 @@ All five run on the same hourly schedule and share the same dedupe + retry logic
 
 ## License
 
-Private — not licensed for redistribution.
+[MIT](LICENSE) © 2026 Amith Ramachandran
