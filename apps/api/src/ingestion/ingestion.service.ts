@@ -14,6 +14,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { JobsRepository } from '../jobs/jobs.repository';
+import { AiService } from '../ai/ai.service';
 import { JOB_SOURCES, type JobSource } from './sources/job-source.interface';
 import { INGEST_QUEUE_NAME, type IngestJobData } from './ingestion.constants';
 
@@ -31,6 +32,7 @@ export class IngestionService implements OnModuleInit {
     @InjectQueue(INGEST_QUEUE_NAME) private readonly queue: Queue<IngestJobData>,
     @Inject(JOB_SOURCES) private readonly sources: JobSource[],
     private readonly jobsRepo: JobsRepository,
+    private readonly ai: AiService,
   ) {}
 
   async onModuleInit() {
@@ -48,7 +50,7 @@ export class IngestionService implements OnModuleInit {
         {
           repeat: { every: REPEAT_EVERY_MS },
           // Don't pile up duplicate runs if a previous one is still in flight.
-          jobId: `ingest:${source.name}`,
+          jobId: `ingest-${source.name}`,
           removeOnComplete: 50,
           removeOnFail: 100,
           attempts: 3,
@@ -80,8 +82,14 @@ export class IngestionService implements OnModuleInit {
     for await (const normalized of source.fetch({ since })) {
       processed++;
       try {
-        await this.jobsRepo.upsert(normalized);
+        const job = await this.jobsRepo.upsert(normalized);
         upserted++;
+        // Phase 2: enqueue embedding for newly-inserted OR description-changed
+        // rows. The repository resets embeddingStatus='pending' on update so we
+        // can use that as the signal — saves us from comparing descriptions here.
+        if (job.embeddingStatus === 'pending') {
+          await this.ai.enqueueEmbedJob(job.id);
+        }
       } catch (err) {
         // One bad row shouldn't kill the run — log and continue.
         this.logger.warn(

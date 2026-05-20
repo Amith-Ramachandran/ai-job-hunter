@@ -1,9 +1,14 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { GoogleAuthGuard } from '../auth/google-auth.guard';
-import { JobsService } from './jobs.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/types';
+import { JobsService, type SortKey, type SortOrder } from './jobs.service';
+
+const SORT_KEYS: SortKey[] = ['posted', 'match', 'title', 'company', 'location', 'source'];
+const SORT_ORDERS: SortOrder[] = ['asc', 'desc'];
 
 class ListJobsQueryDto {
   @IsOptional()
@@ -44,6 +49,14 @@ class ListJobsQueryDto {
   @Min(1)
   @Max(100)
   pageSize?: number;
+
+  @IsOptional()
+  @IsIn(SORT_KEYS)
+  sortBy?: SortKey;
+
+  @IsOptional()
+  @IsIn(SORT_ORDERS)
+  sortOrder?: SortOrder;
 }
 
 @ApiTags('jobs')
@@ -54,7 +67,7 @@ export class JobsController {
   constructor(private readonly jobs: JobsService) {}
 
   @Get()
-  list(@Query() query: ListJobsQueryDto) {
-    return this.jobs.list(query);
+  list(@Query() query: ListJobsQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.jobs.list(query, { userId: user.id });
   }
 }

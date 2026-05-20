@@ -70,6 +70,8 @@ export interface Job {
   applyUrl: string;
   postedAt: string;
   ingestedAt: string;
+  /** Cosine similarity (0-1) between user's latest CV and this job. Null if not yet scored. */
+  matchScore: number | null;
 }
 
 export interface Page<T> {
@@ -79,6 +81,9 @@ export interface Page<T> {
   pageSize: number;
 }
 
+export type SortBy = 'posted' | 'match' | 'title' | 'company' | 'location' | 'source';
+export type SortOrder = 'asc' | 'desc';
+
 export interface ListJobsParams {
   q?: string;
   remote?: boolean;
@@ -87,6 +92,8 @@ export interface ListJobsParams {
   postedSinceDays?: number;
   page?: number;
   pageSize?: number;
+  sortBy?: SortBy;
+  sortOrder?: SortOrder;
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────

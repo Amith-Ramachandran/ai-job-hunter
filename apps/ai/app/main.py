@@ -1,13 +1,15 @@
 """AI service entry point.
 
-Phase 1: this is a stub — only `/health` is implemented. Phase 2 adds:
-    - POST /embed     (chunk + embed text, upsert to Qdrant)
-    - POST /search    (vector search Qdrant)
-    - POST /chat      (RAG chat)
-    - POST /extract   (structured-JSON extraction from JD)
+Phase 2 Slice 2.1 endpoints:
+    GET  /health/live     liveness
+    GET  /health/ready    readiness (Qdrant reachable)
+    POST /embed/cv        chunk + embed CV text → Qdrant
+    POST /embed/job       chunk + embed JD text → Qdrant
+    POST /score/cv        compute per-job match scores for one CV
 
-Keeping it boots-and-serves now so the Nest API can already point at it
-and so deployment plumbing is exercised end-to-end before AI work begins.
+Future slices add:
+    POST /extract/job     LLM-driven JSON extraction (Slice 2.2)
+    POST /chat            tool-calling agent over the user's pipeline (Slice 2.3)
 """
 
 from contextlib import asynccontextmanager
@@ -17,7 +19,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import health
+from app.routers import embed, health, score
+from app.vector_store import get_vector_store
 
 structlog.configure(
     processors=[
@@ -34,14 +37,18 @@ log = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("ai_service.starting", port=settings.port)
+    # Ensure Qdrant collections exist before serving any traffic. Idempotent —
+    # safe across restarts.
+    await get_vector_store().init_collections()
+    log.info("ai_service.ready")
     yield
     log.info("ai_service.stopping")
 
 
 app = FastAPI(
     title="AI Career Copilot — AI Service",
-    description="Embeddings, RAG, and structured extraction. Phase 1 = stub.",
-    version="0.1.0",
+    description="Embeddings, RAG, and structured extraction.",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -53,3 +60,5 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(embed.router)
+app.include_router(score.router)

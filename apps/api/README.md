@@ -23,13 +23,21 @@ src/
 ├── auth/                         # Google ID token verification + guard
 ├── users/                        # /users/me
 ├── cvs/
-│   ├── cvs.service.ts            # upload + list + presigned download URL
+│   ├── cvs.service.ts            # upload + list + presigned download URL; enqueues embed-cv
 │   └── storage/s3-storage.service.ts  # AWS SDK against LocalStack or real S3
-├── jobs/                         # /jobs list + filters
+├── jobs/                         # /jobs list + filters; joins job_scores for matchScore field
 ├── ingestion/
-│   ├── ingestion.service.ts      # orchestrator, schedules BullMQ tasks
+│   ├── ingestion.service.ts      # orchestrator, schedules BullMQ tasks; enqueues embed-job
 │   ├── ingestion.processor.ts    # BullMQ worker
-│   └── sources/                  # JobSource adapters (remotive, greenhouse, hn)
+│   └── sources/                  # JobSource adapters (remotive, greenhouse, lever, ashby, hn)
+├── ai/                           # Phase 2 Slice 2.1
+│   ├── ai.module.ts              # wires queues + workers + producer
+│   ├── ai.service.ts             # producer — enqueueEmbedCv / enqueueEmbedJob / backfill
+│   ├── ai-client.service.ts      # HTTP client to Python AI service
+│   ├── ai.controller.ts          # admin endpoints (/ai/backfill-jobs, /ai/score-now)
+│   ├── embed-cv.processor.ts     # worker — calls /embed/cv, then enqueues score-cv
+│   ├── embed-job.processor.ts    # worker — calls /embed/job, marks embedding_status
+│   └── score-cv.processor.ts     # worker — calls /score/cv, writes job_scores rows
 └── health/                       # /health/* endpoints
 ```
 

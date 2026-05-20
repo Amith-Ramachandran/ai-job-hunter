@@ -1,20 +1,69 @@
 # `ai-job-hunter-ai` — Python FastAPI service
 
-The AI layer for AI Career Copilot. **Phase 1: stub** — only `/health` is implemented. The service exists now so:
-- the Nest API can already point `AI_SERVICE_URL` at it
-- deployment plumbing is exercised end-to-end before AI work begins
-- adding endpoints in Phase 2 is purely additive
+The AI layer for AI Career Copilot. Phase 2 Slice 2.1 ships: embeddings + Qdrant upsert + match scoring.
 
-## Phase 2 surface (planned)
+## Endpoints
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /embed` | Chunk CV/JD text, embed via OpenAI, upsert to Qdrant |
-| `POST /search` | Vector search Qdrant, optionally re-ranked |
-| `POST /chat` | Tool-calling agent over the user's pipeline |
-| `POST /extract` | LLM-driven structured-JSON extraction from a JD |
+| `GET /health/live` | Liveness — process up |
+| `GET /health/ready` | Readiness — Qdrant reachable |
+| `POST /embed/cv` | Section-aware chunk → embed → upsert to `cv_chunks` collection |
+| `POST /embed/job` | Recursive chunk → embed → upsert to `job_chunks` collection |
+| `POST /score/cv` | Compute per-job match scores for one CV (vector search + aggregation) |
 
-## Service boundary
+## Architecture
+
+```
+Nest BullMQ worker
+       │
+       ▼ HTTP POST
+┌─────────────────────────────────────────┐
+│  FastAPI route (e.g. /embed/job)        │
+│    │                                    │
+│    ▼                                    │
+│  app/chunking.py                        │
+│    - chunk_cv()  → section-aware split  │
+│    - chunk_jd()  → recursive splitter   │
+│    │                                    │
+│    ▼                                    │
+│  app/embedder.py                        │
+│    - OpenAI text-embedding-3-small      │
+│    - Batched (one API call per doc)     │
+│    │                                    │
+│    ▼                                    │
+│  app/vector_store.py                    │
+│    - Delete existing points by parent_id│
+│    - Upsert new points (UUID5 keys)     │
+└─────────────────────────────────────────┘
+                 │
+                 ▼
+            ┌──────────┐
+            │  Qdrant  │
+            │  :6333   │
+            └──────────┘
+```
+
+## Module map
+
+```
+app/
+├── main.py              # FastAPI app + lifespan + middleware + router wiring
+├── config.py            # pydantic-settings env loader (OPENAI_API_KEY, QDRANT_URL, …)
+├── chunking.py          # CV section-aware + JD recursive splitters (tiktoken-counted)
+├── embedder.py          # AsyncOpenAI wrapper, batched embed
+├── vector_store.py      # Qdrant async client — collections, upsert, search, delete-by-parent
+├── scoring.py           # max-of-top-5 per-job aggregation
+├── models.py            # Pydantic request/response schemas
+└── routers/
+    ├── health.py
+    ├── embed.py         # POST /embed/cv, POST /embed/job
+    └── score.py         # POST /score/cv
+```
+
+## Stack
+
+## Service boundary (still true)
 
 This service is **stateless w.r.t. Postgres** — it never reads or writes the relational store directly. The Nest API passes whatever context is needed in the request body. The only persistent state owned here is **Qdrant**.
 
@@ -25,9 +74,10 @@ Why: keeps the surface area small, makes the service trivially scalable, and let
 - **FastAPI** — async HTTP, auto-generated OpenAPI docs at `/docs`
 - **Pydantic v2** — request/response models + settings
 - **structlog** — structured JSON logs
-- **LangChain** (Phase 2) — embedding + RAG pipelines
-- **OpenAI SDK** (Phase 2) — embeddings + chat
-- **Qdrant client** (Phase 2) — vector storage
+- **OpenAI SDK** — `text-embedding-3-small` (1536-dim)
+- **Qdrant client** — async, two collections (`cv_chunks`, `job_chunks`)
+- **LangChain text-splitters** — `RecursiveCharacterTextSplitter` for recursive splits
+- **tiktoken** — token-aware chunk sizing
 
 ## Running
 

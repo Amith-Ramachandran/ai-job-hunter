@@ -16,6 +16,7 @@ import { UsersModule } from './users/users.module';
 import { CvsModule } from './cvs/cvs.module';
 import { JobsModule } from './jobs/jobs.module';
 import { IngestionModule } from './ingestion/ingestion.module';
+import { AiModule } from './ai/ai.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { HealthModule } from './health/health.module';
     CvsModule,
     JobsModule,
     IngestionModule,
+    AiModule,
     HealthModule,
   ],
 })

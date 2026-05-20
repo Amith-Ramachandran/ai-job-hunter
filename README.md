@@ -95,8 +95,11 @@ Open [http://localhost:5173](http://localhost:5173).
 | Phase | Scope | Status |
 |---|---|---|
 | **1** | Frontend + API + DB + auth + CV upload + job ingestion (no AI) | ✓ Done |
-| 2 | AI service: embeddings, structured extraction, RAG chat, match scoring | Planned |
-| 3 | Re-ranking, hybrid search, evals, MCP server | Planned |
+| **2.1** | Embeddings (CV + JDs) → Qdrant + match-score column on Jobs page | ✓ Done |
+| 2.2 | LLM-driven structured JD extraction + smart filter chips | Planned |
+| 2.3 | RAG chat with tool-calling agent + cover-letter drafting | Planned |
+| 2.4 | Evals (golden set + NDCG) + cost/token observability dashboard | Planned |
+| 3 | Re-ranking, hybrid search, MCP server | Planned |
 
 ## Job sources
 

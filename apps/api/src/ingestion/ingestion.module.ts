@@ -11,6 +11,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { JobsModule } from '../jobs/jobs.module';
+import { AiModule } from '../ai/ai.module';
 import { IngestionService } from './ingestion.service';
 import { IngestionProcessor } from './ingestion.processor';
 import { INGEST_QUEUE_NAME } from './ingestion.constants';
@@ -30,7 +31,7 @@ const SOURCE_PROVIDERS = [
 ];
 
 @Module({
-  imports: [JobsModule, BullModule.registerQueue({ name: INGEST_QUEUE_NAME })],
+  imports: [JobsModule, AiModule, BullModule.registerQueue({ name: INGEST_QUEUE_NAME })],
   providers: [
     IngestionService,
     IngestionProcessor,

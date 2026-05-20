@@ -50,4 +50,15 @@ export class CvsController {
   get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.cvs.getWithDownloadUrl(id, user.id);
   }
+
+  /**
+   * Re-extract text from the stored file and re-trigger embedding.
+   * Used to refresh CVs uploaded before the parser was wired, or when we
+   * change the parser logic and want to pick up improvements without
+   * forcing the user to re-upload.
+   */
+  @Post(':id/reparse')
+  reparse(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.cvs.reparse(id, user.id);
+  }
 }

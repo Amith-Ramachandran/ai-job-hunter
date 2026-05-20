@@ -1,10 +1,12 @@
 """Liveness / readiness endpoints.
 
-Phase 1: only `/health/live` returns ok. Phase 2 will extend `/health/ready`
-to ping Qdrant and confirm OpenAI credentials are valid.
+/health/live — process is up, no dependencies checked
+/health/ready — Qdrant is reachable
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from app.vector_store import get_vector_store
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -16,5 +18,9 @@ async def live() -> dict[str, str]:
 
 @router.get("/ready")
 async def ready() -> dict[str, str]:
-    # In Phase 2: check Qdrant reachable, OpenAI API key present, etc.
+    try:
+        # Cheap call that proves Qdrant is reachable AND auth (when enabled) works.
+        await get_vector_store()._client.get_collections()
+    except Exception as err:
+        raise HTTPException(status_code=503, detail={"status": "down", "dependency": "qdrant"}) from err
     return {"status": "ok"}

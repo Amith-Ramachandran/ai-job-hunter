@@ -90,6 +90,19 @@ export class S3StorageService {
     });
   }
 
+  /**
+   * Downloads an object as a Buffer. Used by the CV reparse endpoint to
+   * re-extract text from a previously-uploaded file without making the user
+   * upload it again.
+   */
+  async download(key: string): Promise<Buffer> {
+    const res = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    if (!res.Body) {
+      throw new Error(`S3 object ${key} returned empty body`);
+    }
+    return Buffer.from(await res.Body.transformToByteArray());
+  }
+
   async exists(key: string): Promise<boolean> {
     try {
       await this.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
