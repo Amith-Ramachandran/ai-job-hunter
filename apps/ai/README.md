@@ -1,6 +1,6 @@
 # `ai-job-hunter-ai` — Python FastAPI service
 
-The AI layer for AI Career Copilot. Phase 2 Slice 2.1 ships: embeddings + Qdrant upsert + match scoring.
+The AI layer for Dhruva. Phase 2 Slice 2.1 ships: embeddings + Qdrant upsert + match scoring.
 
 ## Endpoints
 

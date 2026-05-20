@@ -2,7 +2,7 @@
   "name": "@ai-job-hunter/api",
   "version": "0.1.0",
   "private": true,
-  "description": "NestJS API for AI Career Copilot — auth, CV storage, job ingestion",
+  "description": "NestJS API for Dhruva — auth, CV storage, job ingestion",
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",

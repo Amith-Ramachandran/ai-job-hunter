@@ -2,7 +2,7 @@
   "name": "ai-job-hunter",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Career Copilot — backend job-hunt assistant with vector search and chatbot",
+  "description": "Dhruva — backend job-hunt assistant with vector search and chatbot",
   "workspaces": [
     "apps/api",
     "apps/web"

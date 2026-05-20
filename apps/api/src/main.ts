@@ -41,8 +41,8 @@ async function bootstrap() {
   });
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('AI Career Copilot API')
-    .setDescription('Backend API for the AI Career Copilot — auth, CVs, jobs.')
+    .setTitle('Dhruva API')
+    .setDescription('Backend API for the Dhruva — auth, CVs, jobs.')
     .setVersion('0.1.0')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
     .build();

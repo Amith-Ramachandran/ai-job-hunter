@@ -16,7 +16,7 @@ export function Layout() {
       <header className="border-b">
         <div className="container flex h-14 items-center justify-between">
           <div className="flex items-center gap-8">
-            <span className="font-semibold tracking-tight">AI Career Copilot</span>
+            <span className="font-semibold tracking-tight">Dhruva</span>
             <nav className="flex items-center gap-1 text-sm">
               <NavLink to="/" end className={navLinkClass}>
                 Dashboard

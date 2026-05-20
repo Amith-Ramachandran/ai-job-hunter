@@ -1,4 +1,4 @@
-# AI Career Copilot
+# Dhruva
 
 A personal AI-powered job-hunt assistant. Ingests jobs from public sources, ranks them against your CV, and lets you chat over your pipeline.
 

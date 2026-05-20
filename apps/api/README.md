@@ -1,6 +1,6 @@
 # `@ai-job-hunter/api` — NestJS backend
 
-The HTTP API and background worker for AI Career Copilot.
+The HTTP API and background worker for Dhruva.
 
 ## Responsibilities
 

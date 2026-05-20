@@ -34,7 +34,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-xl">AI Career Copilot</CardTitle>
+          <CardTitle className="text-xl">Dhruva</CardTitle>
           <CardDescription>Sign in to upload your CV and explore matched jobs.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4 pb-8">

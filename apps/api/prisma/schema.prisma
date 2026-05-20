@@ -1,4 +1,4 @@
-// Prisma schema for AI Career Copilot.
+// Prisma schema for Dhruva.
 //
 // Design notes:
 // - `Job.embedding_status` lets the AI service track which postings still need

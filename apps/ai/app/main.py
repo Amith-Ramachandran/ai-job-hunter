@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AI Career Copilot — AI Service",
+    title="Dhruva — AI Service",
     description="Embeddings, RAG, and structured extraction.",
     version="0.2.0",
     lifespan=lifespan,

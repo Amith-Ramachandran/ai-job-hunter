@@ -1,4 +1,4 @@
-# Local-dev infrastructure for AI Career Copilot.
+# Local-dev infrastructure for Dhruva.
 #
 # Services:
 #   postgres     — primary relational store (users, cvs, jobs, applications)
