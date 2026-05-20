@@ -1,15 +1,15 @@
 """AI service entry point.
 
-Phase 2 Slice 2.1 endpoints:
+Endpoints:
     GET  /health/live     liveness
     GET  /health/ready    readiness (Qdrant reachable)
     POST /embed/cv        chunk + embed CV text → Qdrant
     POST /embed/job       chunk + embed JD text → Qdrant
     POST /score/cv        compute per-job match scores for one CV
+    POST /extract/job     LLM-driven structured-JSON extraction from a JD
 
-Future slices add:
-    POST /extract/job     LLM-driven JSON extraction (Slice 2.2)
-    POST /chat            tool-calling agent over the user's pipeline (Slice 2.3)
+Future slice 2.3 adds:
+    POST /chat            tool-calling agent over the user's pipeline
 """
 
 from contextlib import asynccontextmanager
@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import embed, health, score
+from app.routers import embed, extract, health, score
 from app.vector_store import get_vector_store
 
 structlog.configure(
@@ -62,3 +62,4 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(embed.router)
 app.include_router(score.router)
+app.include_router(extract.router)

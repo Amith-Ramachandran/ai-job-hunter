@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Hard-coded for now — text-embedding-3-small is 1536; large is 3072.
     # If we change models, this needs to match or Qdrant will reject vectors.
     openai_embedding_dim: int = 1536
+    # Used by the /extract/job endpoint. gpt-4o-mini is the cheap workhorse
+    # for structured extraction (~$0.15/M in, $0.60/M out). Bump to gpt-4o
+    # only if eval shows extraction quality matters more than cost.
+    openai_extraction_model: str = "gpt-4o-mini"
 
     # ─── Qdrant ────────────────────────────────────────────
     qdrant_url: str = "http://localhost:6333"

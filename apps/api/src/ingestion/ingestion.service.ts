@@ -12,9 +12,11 @@
  */
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import { JobsRepository } from '../jobs/jobs.repository';
 import { AiService } from '../ai/ai.service';
+import type { Env } from '../common/config/env.schema';
 import { JOB_SOURCES, type JobSource } from './sources/job-source.interface';
 import { INGEST_QUEUE_NAME, type IngestJobData } from './ingestion.constants';
 
@@ -33,6 +35,7 @@ export class IngestionService implements OnModuleInit {
     @Inject(JOB_SOURCES) private readonly sources: JobSource[],
     private readonly jobsRepo: JobsRepository,
     private readonly ai: AiService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   async onModuleInit() {
@@ -84,11 +87,13 @@ export class IngestionService implements OnModuleInit {
       try {
         const job = await this.jobsRepo.upsert(normalized);
         upserted++;
-        // Phase 2: enqueue embedding for newly-inserted OR description-changed
-        // rows. The repository resets embeddingStatus='pending' on update so we
-        // can use that as the signal — saves us from comparing descriptions here.
+        // Phase 2: enqueue embedding + extraction in parallel for newly-inserted
+        // or description-changed rows. The repository resets embeddingStatus to
+        // 'pending' on update — we use that as the signal so we don't redo work
+        // for unchanged descriptions.
         if (job.embeddingStatus === 'pending') {
           await this.ai.enqueueEmbedJob(job.id);
+          await this.ai.enqueueExtractJob(job.id);
         }
       } catch (err) {
         // One bad row shouldn't kill the run — log and continue.
@@ -106,14 +111,25 @@ export class IngestionService implements OnModuleInit {
   }
 
   /**
-   * `since` for the next fetch = latest postedAt we already have, minus a
-   * small overlap window to catch posts that show up out-of-order or get
-   * edited.
+   * `since` for the next fetch is the LATER of:
+   *   - the latest postedAt we already have minus a 6h overlap window
+   *     (catches out-of-order or edited postings)
+   *   - the configured max-age floor (e.g. 7 days)
+   *
+   * On a fresh DB, only the floor applies — keeps us from refetching jobs
+   * from years ago. After ingestion catches up, the natural-overlap window
+   * is almost always inside the max-age cap so the floor is a no-op.
    */
   private async computeSince(sourceName: string): Promise<Date | undefined> {
+    const maxAgeDays = this.config.get('INGESTION_MAX_AGE_DAYS', { infer: true });
+    const ageFloor = new Date(Date.now() - maxAgeDays * 86_400_000);
+
     const lastSeen = await this.jobsRepo.lastPostedAtForSource(sourceName);
-    if (!lastSeen) return undefined;
+    if (!lastSeen) return ageFloor;
+
     const overlapMs = 6 * 60 * 60 * 1000; // 6 hours
-    return new Date(lastSeen.getTime() - overlapMs);
+    const naturalSince = new Date(lastSeen.getTime() - overlapMs);
+    // Whichever is more recent — that's our cutoff.
+    return naturalSince > ageFloor ? naturalSince : ageFloor;
   }
 }

@@ -4,19 +4,25 @@
  * Sorting:
  *   - Every column header is clickable. Click cycles direction (asc ↔ desc).
  *   - Default sort is "match desc" (best matches first).
- *   - Each column has a "natural" direction used on first activation:
- *     match/posted → desc (most-recent / best first), text columns → asc.
+ *
+ * Filtering:
+ *   - Free-text search + country + min salary inputs.
+ *   - Multi-select chips for seniority and work-model (extracted via LLM).
+ *   - Skill typeahead — picks populate `skillsAll[]` (AND semantics).
  *
  * Data fetching: useQuery keyed on the filters object so changing a filter
  * triggers a refetch. `keepPreviousData` keeps the table populated while a
  * new page loads.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronsUpDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { ChevronDown, ChevronsUpDown, ChevronUp, ExternalLink, X } from 'lucide-react';
 import {
   listJobs,
+  listTopSkills,
   type ListJobsParams,
+  type RemotePolicy,
+  type Seniority,
   type SortBy,
   type SortOrder,
 } from '@/lib/api';
@@ -35,6 +41,9 @@ const NATURAL_DIRECTION: Record<SortBy, SortOrder> = {
   source: 'asc',
 };
 
+const SENIORITY_OPTIONS: Seniority[] = ['junior', 'mid', 'senior', 'staff', 'principal'];
+const REMOTE_OPTIONS: RemotePolicy[] = ['remote', 'hybrid', 'on-site'];
+
 export function JobsPage() {
   const [filters, setFilters] = useState<ListJobsParams>({
     page: 1,
@@ -50,13 +59,20 @@ export function JobsPage() {
     placeholderData: keepPreviousData,
   });
 
+  // The skill-chip typeahead pulls from this endpoint. Cached for 5 minutes
+  // because the top-N skills don't change minute to minute.
+  const topSkillsQuery = useQuery({
+    queryKey: ['topSkills'],
+    queryFn: () => listTopSkills(50),
+    staleTime: 5 * 60_000,
+  });
+
   const totalPages = jobsQuery.data
     ? Math.max(1, Math.ceil(jobsQuery.data.total / (filters.pageSize ?? 20)))
     : 1;
 
   function handleSort(col: SortBy) {
     setFilters((f) => {
-      // Same column → toggle direction. Different column → use its natural default.
       const nextOrder: SortOrder =
         f.sortBy === col
           ? f.sortOrder === 'asc'
@@ -65,6 +81,14 @@ export function JobsPage() {
           : NATURAL_DIRECTION[col];
       return { ...f, sortBy: col, sortOrder: nextOrder, page: 1 };
     });
+  }
+
+  function toggleInArray<T>(arr: T[] | undefined, value: T): T[] | undefined {
+    const set = new Set(arr ?? []);
+    if (set.has(value)) set.delete(value);
+    else set.add(value);
+    const next = Array.from(set);
+    return next.length > 0 ? next : undefined;
   }
 
   return (
@@ -81,14 +105,17 @@ export function JobsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
-          <CardDescription>Narrow the list down.</CardDescription>
+          <CardDescription>Combine free-text + structured filters.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Row 1: free-text inputs */}
           <div className="grid gap-3 md:grid-cols-4">
             <Input
               placeholder="Search title, company, description"
               defaultValue={filters.q ?? ''}
-              onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value || undefined, page: 1 }))}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, q: e.target.value || undefined, page: 1 }))
+              }
             />
             <Input
               placeholder="Country / location"
@@ -116,9 +143,53 @@ export function JobsPage() {
                   setFilters((f) => ({ ...f, remote: e.target.checked || undefined, page: 1 }))
                 }
               />
-              Remote only
+              Remote only (source flag)
             </label>
           </div>
+
+          {/* Row 2: chip groups */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <ChipGroup
+              label="Seniority"
+              options={SENIORITY_OPTIONS}
+              selected={filters.seniorityIn ?? []}
+              onToggle={(v) =>
+                setFilters((f) => ({ ...f, seniorityIn: toggleInArray(f.seniorityIn, v), page: 1 }))
+              }
+            />
+            <ChipGroup
+              label="Work model"
+              options={REMOTE_OPTIONS}
+              selected={filters.remotePolicyIn ?? []}
+              onToggle={(v) =>
+                setFilters((f) => ({
+                  ...f,
+                  remotePolicyIn: toggleInArray(f.remotePolicyIn, v),
+                  page: 1,
+                }))
+              }
+            />
+          </div>
+
+          {/* Row 3: skills typeahead */}
+          <SkillsPicker
+            selected={filters.skillsAll ?? []}
+            suggestions={topSkillsQuery.data ?? []}
+            onAdd={(skill) =>
+              setFilters((f) => {
+                const next = new Set(f.skillsAll ?? []);
+                next.add(skill);
+                return { ...f, skillsAll: Array.from(next), page: 1 };
+              })
+            }
+            onRemove={(skill) =>
+              setFilters((f) => ({
+                ...f,
+                skillsAll: (f.skillsAll ?? []).filter((s) => s !== skill) || undefined,
+                page: 1,
+              }))
+            }
+          />
         </CardContent>
       </Card>
 
@@ -154,7 +225,26 @@ export function JobsPage() {
                 )}
                 {jobsQuery.data?.items.map((job) => (
                   <tr key={job.id} className="hover:bg-muted/50">
-                    <td className="px-4 py-3 font-medium">{job.title}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{job.title}</div>
+                      {job.extractedJson?.required_skills?.length ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {job.extractedJson.required_skills.slice(0, 5).map((s) => (
+                            <span
+                              key={s}
+                              className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                          {job.extractedJson.required_skills.length > 5 && (
+                            <span className="text-[10px] text-muted-foreground">
+                              +{job.extractedJson.required_skills.length - 5}
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3">{job.company}</td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {job.remote ? 'Remote' : (job.location ?? '—')}
@@ -205,6 +295,147 @@ export function JobsPage() {
             Next
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A row of toggleable chips. Click to add to selection, click again to remove.
+ * Active chips show in primary color; inactive in muted.
+ */
+function ChipGroup<T extends string>({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: readonly T[];
+  selected: T[];
+  onToggle: (value: T) => void;
+}) {
+  const set = new Set(selected);
+  return (
+    <div>
+      <div className="mb-2 text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((opt) => {
+          const isActive = set.has(opt);
+          return (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => onToggle(opt)}
+              className={cn(
+                'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                isActive
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-input bg-background text-muted-foreground hover:bg-secondary',
+              )}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Skill picker: free-text input with a dropdown of top extracted skills.
+ * Selected skills appear as removable chips above the input. AND semantics —
+ * a job must include EVERY selected skill in its required_skills array.
+ */
+function SkillsPicker({
+  selected,
+  suggestions,
+  onAdd,
+  onRemove,
+}: {
+  selected: string[];
+  suggestions: { skill: string; count: number }[];
+  onAdd: (skill: string) => void;
+  onRemove: (skill: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const [open, setOpen] = useState(false);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  const filtered = useMemo(() => {
+    const q = text.trim().toLowerCase();
+    return suggestions
+      .filter((s) => !selectedSet.has(s.skill))
+      .filter((s) => (q ? s.skill.toLowerCase().includes(q) : true))
+      .slice(0, 8);
+  }, [suggestions, selectedSet, text]);
+
+  return (
+    <div>
+      <div className="mb-2 text-xs font-medium text-muted-foreground">
+        Required skills (ALL of)
+      </div>
+
+      {selected.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {selected.map((s) => (
+            <span
+              key={s}
+              className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+            >
+              {s}
+              <button
+                type="button"
+                onClick={() => onRemove(s)}
+                className="rounded-full hover:bg-primary-foreground/20"
+                aria-label={`Remove ${s}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="relative">
+        <Input
+          value={text}
+          placeholder="Type a skill, or pick from the list…"
+          onChange={(e) => setText(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 100)}
+          onKeyDown={(e) => {
+            // Enter adds the typed value as a custom skill (lets you filter
+            // by skills not yet present in the top-N list).
+            if (e.key === 'Enter' && text.trim()) {
+              e.preventDefault();
+              onAdd(text.trim());
+              setText('');
+            }
+          }}
+        />
+        {open && filtered.length > 0 && (
+          <div className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md">
+            {filtered.map((s) => (
+              <button
+                key={s.skill}
+                type="button"
+                onMouseDown={(e) => {
+                  // onMouseDown beats onBlur — keeps the dropdown open
+                  // long enough for the click to register.
+                  e.preventDefault();
+                  onAdd(s.skill);
+                  setText('');
+                }}
+                className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+              >
+                <span>{s.skill}</span>
+                <span className="text-xs text-muted-foreground">{s.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

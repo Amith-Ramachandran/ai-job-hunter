@@ -41,6 +41,53 @@ export interface ScoreResponse {
   items: ScoreItem[];
 }
 
+export interface ExtractRequest {
+  id: string;
+  text: string;
+}
+
+/**
+ * Mirror of the Python ExtractedJd Pydantic model. Kept as a TypeScript
+ * interface (not a class) because we just store/forward the JSON — no
+ * methods, no validation on this side.
+ */
+export interface ExtractedJd {
+  seniority: 'intern' | 'junior' | 'mid' | 'senior' | 'staff' | 'principal' | null;
+  years_required_min: number | null;
+  years_required_max: number | null;
+  required_skills: string[];
+  nice_to_have_skills: string[];
+  salary_min: number | null;
+  salary_max: number | null;
+  currency: string | null;
+  remote_policy: 'remote' | 'hybrid' | 'on-site' | null;
+  office_locations: string[];
+  role_type:
+    | 'backend'
+    | 'frontend'
+    | 'fullstack'
+    | 'mobile'
+    | 'data'
+    | 'ml'
+    | 'devops'
+    | 'security'
+    | 'qa'
+    | 'design'
+    | 'product'
+    | 'other'
+    | null;
+  tech_stack_summary: string | null;
+}
+
+export interface ExtractResponse {
+  id: string;
+  extracted: ExtractedJd;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
 @Injectable()
 export class AiClientService {
   private readonly logger = new Logger(AiClientService.name);
@@ -62,19 +109,36 @@ export class AiClientService {
     return this.post<ScoreResponse>('/score/cv', body);
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
+  extractJob(body: ExtractRequest): Promise<ExtractResponse> {
+    // Extraction is slower than embedding (LLM call vs embeddings endpoint).
+    // Override the default 15s timeout to be safe for verbose JDs.
+    return this.post<ExtractResponse>('/extract/job', body, { timeoutMs: 60_000 });
+  }
+
+  private async post<T>(
+    path: string,
+    body: unknown,
+    opts: { timeoutMs?: number } = {},
+  ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      this.logger.warn({ url, status: res.status, text }, 'AI service call failed');
-      // Throw with the status so BullMQ logs it cleanly; the queue retries.
-      throw new Error(`AI service ${path} failed: ${res.status} ${text.slice(0, 200)}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15_000);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        this.logger.warn({ url, status: res.status, text }, 'AI service call failed');
+        // Throw with the status so BullMQ logs it cleanly; the queue retries.
+        throw new Error(`AI service ${path} failed: ${res.status} ${text.slice(0, 200)}`);
+      }
+      return (await res.json()) as T;
+    } finally {
+      clearTimeout(timer);
     }
-    return (await res.json()) as T;
   }
 }

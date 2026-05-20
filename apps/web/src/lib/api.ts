@@ -57,6 +57,38 @@ export interface Cv {
   uploadedAt: string;
 }
 
+export type Seniority = 'intern' | 'junior' | 'mid' | 'senior' | 'staff' | 'principal';
+export type RemotePolicy = 'remote' | 'hybrid' | 'on-site';
+export type RoleType =
+  | 'backend'
+  | 'frontend'
+  | 'fullstack'
+  | 'mobile'
+  | 'data'
+  | 'ml'
+  | 'devops'
+  | 'security'
+  | 'qa'
+  | 'design'
+  | 'product'
+  | 'other';
+
+/** Mirror of the backend ExtractedJd shape (LLM-extracted structured fields). */
+export interface ExtractedJd {
+  seniority: Seniority | null;
+  years_required_min: number | null;
+  years_required_max: number | null;
+  required_skills: string[];
+  nice_to_have_skills: string[];
+  salary_min: number | null;
+  salary_max: number | null;
+  currency: string | null;
+  remote_policy: RemotePolicy | null;
+  office_locations: string[];
+  role_type: RoleType | null;
+  tech_stack_summary: string | null;
+}
+
 export interface Job {
   id: string;
   source: string;
@@ -72,6 +104,8 @@ export interface Job {
   ingestedAt: string;
   /** Cosine similarity (0-1) between user's latest CV and this job. Null if not yet scored. */
   matchScore: number | null;
+  /** Structured fields extracted from the JD. Null until extraction has run. */
+  extractedJson: ExtractedJd | null;
 }
 
 export interface Page<T> {
@@ -94,6 +128,15 @@ export interface ListJobsParams {
   pageSize?: number;
   sortBy?: SortBy;
   sortOrder?: SortOrder;
+  /** Slice 2.2 — extracted-JSON filters. */
+  seniorityIn?: Seniority[];
+  skillsAll?: string[];
+  remotePolicyIn?: RemotePolicy[];
+}
+
+export interface SkillTally {
+  skill: string;
+  count: number;
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
@@ -123,6 +166,16 @@ export async function uploadCv(file: File): Promise<Cv> {
 // ─── Jobs ─────────────────────────────────────────────────────────────────
 
 export async function listJobs(params: ListJobsParams): Promise<Page<Job>> {
-  const { data } = await api.get<Page<Job>>('/jobs', { params });
+  const { data } = await api.get<Page<Job>>('/jobs', {
+    params,
+    // axios serializes arrays as `?key[]=…` by default; backend expects
+    // comma-separated values, which class-transformer's toArray() splits.
+    paramsSerializer: { indexes: null },
+  });
+  return data;
+}
+
+export async function listTopSkills(limit = 50): Promise<SkillTally[]> {
+  const { data } = await api.get<SkillTally[]>('/jobs/top-skills', { params: { limit } });
   return data;
 }

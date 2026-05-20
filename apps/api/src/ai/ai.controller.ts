@@ -33,6 +33,11 @@ export class AiController {
     return this.ai.enqueuePendingJobBackfill();
   }
 
+  @Post('backfill-extractions')
+  backfillExtractions() {
+    return this.ai.enqueueMissingExtractionsBackfill();
+  }
+
   @Post('score-now')
   async scoreNow(@CurrentUser() user: AuthenticatedUser) {
     const latestCv = await this.prisma.cv.findFirst({

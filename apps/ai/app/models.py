@@ -40,3 +40,21 @@ class ScoreResponse(BaseModel):
     cv_id: str
     scored: int
     items: list[JobScoreItem]
+
+
+class ExtractRequest(BaseModel):
+    """LLM extraction of structured fields from a single JD."""
+
+    id: str = Field(..., min_length=1, description="jobId")
+    text: str = Field(..., min_length=1)
+
+
+class ExtractResponse(BaseModel):
+    """Wraps the ExtractedJd payload + token-usage info for cost tracking."""
+
+    id: str
+    extracted: dict  # serialized ExtractedJd — kept generic here to avoid import cycle
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int

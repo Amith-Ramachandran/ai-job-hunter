@@ -19,6 +19,9 @@ import type { Job, JobScore, Prisma } from '@prisma/client';
 export type SortKey = 'posted' | 'match' | 'title' | 'company' | 'location' | 'source';
 export type SortOrder = 'asc' | 'desc';
 
+export type Seniority = 'intern' | 'junior' | 'mid' | 'senior' | 'staff' | 'principal';
+export type RemotePolicy = 'remote' | 'hybrid' | 'on-site';
+
 export interface ListJobsFilters {
   q?: string;
   remote?: boolean;
@@ -29,6 +32,14 @@ export interface ListJobsFilters {
   pageSize?: number;
   sortBy?: SortKey;
   sortOrder?: SortOrder;
+
+  // Phase 2 Slice 2.2 filters — read from the jobs.extracted_json JSONB column.
+  /** Show only jobs whose extracted seniority matches one of these. */
+  seniorityIn?: Seniority[];
+  /** Show only jobs requiring ALL listed skills (AND, case-insensitive). */
+  skillsAll?: string[];
+  /** Show only jobs matching one of these work-model values. */
+  remotePolicyIn?: RemotePolicy[];
 }
 
 export interface ListJobsContext {
@@ -81,6 +92,7 @@ export class JobsService {
 
   private buildWhere(filters: ListJobsFilters): Prisma.JobWhereInput {
     const where: Prisma.JobWhereInput = {};
+    const andClauses: Prisma.JobWhereInput[] = [];
 
     if (filters.q) {
       where.OR = [
@@ -101,6 +113,41 @@ export class JobsService {
     if (filters.postedSinceDays) {
       const cutoff = new Date(Date.now() - filters.postedSinceDays * 86_400_000);
       where.postedAt = { gte: cutoff };
+    }
+
+    // ─── Extracted-JSON filters (Slice 2.2) ────────────────────────────
+    // Prisma's JSON path filters compile to Postgres `->` / `->>` operators
+    // on the jsonb column. Slower than indexed columns; fine for our scale.
+    // Prisma doesn't have a `string_in` operator for JSON paths, so for
+    // "one of N" semantics we expand into an OR of `equals` clauses.
+    if (filters.seniorityIn?.length) {
+      andClauses.push({
+        OR: filters.seniorityIn.map((s) => ({
+          extractedJson: { path: ['seniority'], equals: s },
+        })),
+      });
+    }
+    if (filters.remotePolicyIn?.length) {
+      andClauses.push({
+        OR: filters.remotePolicyIn.map((p) => ({
+          extractedJson: { path: ['remote_policy'], equals: p },
+        })),
+      });
+    }
+    if (filters.skillsAll?.length) {
+      // ALL semantics: one AND clause per required skill, each checking that
+      // the skill string appears in the required_skills array of the extraction.
+      // array_contains expects the JSON value to search for (wrapped in [] so
+      // we match string-in-array, not the literal array).
+      for (const skill of filters.skillsAll) {
+        andClauses.push({
+          extractedJson: { path: ['required_skills'], array_contains: [skill] },
+        });
+      }
+    }
+
+    if (andClauses.length > 0) {
+      where.AND = andClauses;
     }
     return where;
   }
@@ -190,5 +237,28 @@ export class JobsService {
   private stripScores(row: JobRow): Job {
     const { scores: _scores, ...rest } = row;
     return rest;
+  }
+
+  /**
+   * Returns the top-N most common required skills across the current job
+   * pool, sorted by frequency. Powers the skill-chip typeahead in the UI.
+   *
+   * Implemented via a raw SQL aggregation because Prisma doesn't expose
+   * `jsonb_array_elements_text`. Cached for a few minutes' worth of work
+   * could be added later if it becomes a hot path; for our scale (sub-1k
+   * jobs in steady state) it's <50ms.
+   */
+  async topSkills(limit = 50): Promise<Array<{ skill: string; count: number }>> {
+    type Row = { skill: string; count: bigint };
+    const rows = await this.prisma.$queryRaw<Row[]>`
+      SELECT skill, COUNT(*)::bigint AS count
+      FROM jobs,
+           LATERAL jsonb_array_elements_text(extracted_json -> 'required_skills') AS skill
+      WHERE extracted_json IS NOT NULL
+      GROUP BY skill
+      ORDER BY count DESC, skill ASC
+      LIMIT ${limit}
+    `;
+    return rows.map((r) => ({ skill: r.skill, count: Number(r.count) }));
   }
 }

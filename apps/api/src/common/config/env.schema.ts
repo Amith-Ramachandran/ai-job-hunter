@@ -34,6 +34,12 @@ export const envSchema = z.object({
     .transform((v) => v === 'true'),
 
   AI_SERVICE_URL: z.string().url().default('http://localhost:8000'),
+
+  // How far back to fetch on ingestion. Even on an empty DB, the cutoff is
+  // applied so we never burn API quota / OpenAI tokens on stale postings.
+  // For incremental runs after the first, the natural `lastPostedAt - 6h`
+  // window almost always lands inside this cap anyway.
+  INGESTION_MAX_AGE_DAYS: z.coerce.number().int().min(1).max(365).default(7),
 });
 
 export type Env = z.infer<typeof envSchema>;

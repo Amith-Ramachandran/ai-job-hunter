@@ -12,14 +12,17 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import { Prisma } from '@prisma/client';
 import type { Queue } from 'bullmq';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   EMBED_CV_QUEUE,
   EMBED_JOB_QUEUE,
+  EXTRACT_JOB_QUEUE,
   SCORE_CV_QUEUE,
   type EmbedCvJobData,
   type EmbedJobJobData,
+  type ExtractJobJobData,
   type ScoreCvJobData,
 } from './ai.constants';
 
@@ -43,6 +46,7 @@ export class AiService {
     private readonly prisma: PrismaService,
     @InjectQueue(EMBED_CV_QUEUE) private readonly embedCvQueue: Queue<EmbedCvJobData>,
     @InjectQueue(EMBED_JOB_QUEUE) private readonly embedJobQueue: Queue<EmbedJobJobData>,
+    @InjectQueue(EXTRACT_JOB_QUEUE) private readonly extractJobQueue: Queue<ExtractJobJobData>,
     @InjectQueue(SCORE_CV_QUEUE) private readonly scoreCvQueue: Queue<ScoreCvJobData>,
   ) {}
 
@@ -59,6 +63,14 @@ export class AiService {
       `embed-job:${jobId}`,
       { jobId },
       { jobId: `embed-job-${jobId}`, ...STANDARD_RETRY },
+    );
+  }
+
+  async enqueueExtractJob(jobId: string) {
+    return this.extractJobQueue.add(
+      `extract-job:${jobId}`,
+      { jobId },
+      { jobId: `extract-job-${jobId}`, ...STANDARD_RETRY },
     );
   }
 
@@ -84,5 +96,25 @@ export class AiService {
     }
     this.logger.log({ count: pending.length }, 'Enqueued pending jobs for embedding');
     return { enqueued: pending.length };
+  }
+
+  /**
+   * Enqueue extraction for every job missing structured fields. Run once
+   * after the extraction pipeline is added, or after a JD parser change
+   * where we want to re-extract.
+   */
+  async enqueueMissingExtractionsBackfill(): Promise<{ enqueued: number }> {
+    const missing = await this.prisma.job.findMany({
+      // Prisma's null filter on JSON columns uses Prisma.DbNull (DB-level NULL)
+      // rather than `null` — the latter is reserved for JSON `null` values
+      // inside the document.
+      where: { extractedJson: { equals: Prisma.DbNull } },
+      select: { id: true },
+    });
+    for (const j of missing) {
+      await this.enqueueExtractJob(j.id);
+    }
+    this.logger.log({ count: missing.length }, 'Enqueued jobs for extraction');
+    return { enqueued: missing.length };
   }
 }

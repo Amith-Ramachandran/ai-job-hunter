@@ -1,11 +1,13 @@
 /**
  * Constants shared by the AI module — queue names + job-data shapes.
  *
- * Three queues, one per kind of work:
- *   - embed-cv:  triggered on every CV upload; calls Python /embed/cv
- *   - embed-job: triggered on every job upsert; calls Python /embed/job
- *   - score-cv:  triggered after embed-cv succeeds; calls Python /score/cv
- *                and writes results to job_scores table
+ * Four queues, one per kind of work:
+ *   - embed-cv:    triggered on every CV upload; calls Python /embed/cv
+ *   - embed-job:   triggered on every job upsert; calls Python /embed/job
+ *   - extract-job: triggered on every job upsert in parallel with embed-job;
+ *                  calls Python /extract/job and persists extracted_json
+ *   - score-cv:    triggered after embed-cv succeeds; calls Python /score/cv
+ *                  and writes results to job_scores table
  *
  * Shapes are exported so processors and producers share the same TypeScript
  * type — adding a field forces every site to update.
@@ -13,6 +15,7 @@
 
 export const EMBED_CV_QUEUE = 'embed-cv';
 export const EMBED_JOB_QUEUE = 'embed-job';
+export const EXTRACT_JOB_QUEUE = 'extract-job';
 export const SCORE_CV_QUEUE = 'score-cv';
 
 export interface EmbedCvJobData {
@@ -20,6 +23,10 @@ export interface EmbedCvJobData {
 }
 
 export interface EmbedJobJobData {
+  jobId: string;
+}
+
+export interface ExtractJobJobData {
   jobId: string;
 }
 

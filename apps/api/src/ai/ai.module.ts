@@ -10,12 +10,13 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { AuthModule } from '../auth/auth.module';
-import { EMBED_CV_QUEUE, EMBED_JOB_QUEUE, SCORE_CV_QUEUE } from './ai.constants';
+import { EMBED_CV_QUEUE, EMBED_JOB_QUEUE, EXTRACT_JOB_QUEUE, SCORE_CV_QUEUE } from './ai.constants';
 import { AiClientService } from './ai-client.service';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
 import { EmbedCvProcessor } from './embed-cv.processor';
 import { EmbedJobProcessor } from './embed-job.processor';
+import { ExtractJobProcessor } from './extract-job.processor';
 import { ScoreCvProcessor } from './score-cv.processor';
 
 @Module({
@@ -24,10 +25,18 @@ import { ScoreCvProcessor } from './score-cv.processor';
     BullModule.registerQueue(
       { name: EMBED_CV_QUEUE },
       { name: EMBED_JOB_QUEUE },
+      { name: EXTRACT_JOB_QUEUE },
       { name: SCORE_CV_QUEUE },
     ),
   ],
-  providers: [AiClientService, AiService, EmbedCvProcessor, EmbedJobProcessor, ScoreCvProcessor],
+  providers: [
+    AiClientService,
+    AiService,
+    EmbedCvProcessor,
+    EmbedJobProcessor,
+    ExtractJobProcessor,
+    ScoreCvProcessor,
+  ],
   controllers: [AiController],
   exports: [AiService],
 })
