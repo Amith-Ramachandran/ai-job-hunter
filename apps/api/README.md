@@ -6,8 +6,10 @@ The HTTP API and background worker for AI Career Copilot.
 
 - **Auth**: verifies Google ID tokens, upserts the local user record
 - **CV storage**: accepts uploads, writes to S3 (LocalStack in dev), records metadata in Postgres
-- **Job catalog**: serves the filtered/paginated jobs list to the frontend
-- **Ingestion**: scheduled BullMQ workers fetch from job sources and upsert into Postgres
+- **CV parsing**: extracts text from PDF / TXT via `pdf-parse` so embeddings have real content to work with
+- **Job catalog**: serves the filtered/paginated/sortable jobs list to the frontend; joins per-job match scores from `job_scores` for the user's latest CV
+- **Ingestion**: scheduled BullMQ workers fetch from 5 job sources and upsert into Postgres
+- **AI orchestration**: BullMQ queues (`embed-cv`, `embed-job`, `score-cv`) call the Python AI service over HTTP; admin endpoints for backfill and manual re-score
 - **Health probes**: `/health/live` and `/health/ready`
 
 ## Module map
@@ -24,6 +26,8 @@ src/
 ├── users/                        # /users/me
 ├── cvs/
 │   ├── cvs.service.ts            # upload + list + presigned download URL; enqueues embed-cv
+│   ├── cvs.controller.ts         # /cvs endpoints incl. POST /cvs/:id/reparse
+│   ├── parser/cv-parser.service.ts  # pdf-parse + text/plain extractor
 │   └── storage/s3-storage.service.ts  # AWS SDK against LocalStack or real S3
 ├── jobs/                         # /jobs list + filters; joins job_scores for matchScore field
 ├── ingestion/
@@ -81,7 +85,15 @@ Swagger UI: [http://localhost:3000/docs](http://localhost:3000/docs).
 
 See `.env.example`. The app refuses to start if any required value is missing — bad envs are caught before the first request, not on the first failed query.
 
-## Phase 2 plumbing
+## AI service integration (Slice 2.1 — shipped)
 
-- `embedding_status` field on `Job` lets a worker pick up new postings to embed.
-- `AI_SERVICE_URL` env var is already wired in. The `embed-job` BullMQ queue + worker will be added when AI work begins.
+| Trigger | Queue | Worker action |
+|---|---|---|
+| CV uploaded (`CvsService.uploadCv`) | `embed-cv` | Calls Python `POST /embed/cv` → on success, enqueues `score-cv` |
+| Job upserted with `embedding_status='pending'` (`IngestionService.runOnce`) | `embed-job` | Calls Python `POST /embed/job` → flips status to `done` |
+| Manual: `POST /ai/score-now` | `score-cv` | Calls Python `POST /score/cv` → wipes + batch-inserts `job_scores` rows |
+| Manual: `POST /ai/backfill-jobs` | `embed-job` (×N) | Bulk-enqueues every pending job; useful after first deploy |
+
+All three queues share `STANDARD_RETRY` in `ai.service.ts`: 3 attempts, 30s exponential backoff, `removeOnFail: true` (auto-removes after final retry so a stuck failed job doesn't block future enqueues via the jobId dedupe).
+
+The `AI_SERVICE_URL` env var points at the Python service (default `http://localhost:8000`).

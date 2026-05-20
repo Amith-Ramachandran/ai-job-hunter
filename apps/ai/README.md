@@ -61,9 +61,7 @@ app/
     └── score.py         # POST /score/cv
 ```
 
-## Stack
-
-## Service boundary (still true)
+## Service boundary
 
 This service is **stateless w.r.t. Postgres** — it never reads or writes the relational store directly. The Nest API passes whatever context is needed in the request body. The only persistent state owned here is **Qdrant**.
 
