@@ -95,10 +95,14 @@ export class JobsService {
     const andClauses: Prisma.JobWhereInput[] = [];
 
     if (filters.q) {
+      // Scoped to title + company. Including descriptionMd here surprises
+      // users — typing "Airbnb" matched a Stripe role whose JD mentioned
+      // Airbnb as a competitor reference. For skill / tech / domain search
+      // the chip filters (skillsAll) give precise, fast queries on the
+      // extracted JSON instead of substring grepping prose.
       where.OR = [
         { title: { contains: filters.q, mode: 'insensitive' } },
         { company: { contains: filters.q, mode: 'insensitive' } },
-        { descriptionMd: { contains: filters.q, mode: 'insensitive' } },
       ];
     }
     if (typeof filters.remote === 'boolean') {

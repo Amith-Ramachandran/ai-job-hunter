@@ -3,43 +3,54 @@
 @tailwind utilities;
 
 /**
- * shadcn/ui design tokens.
+ * Design tokens.
  *
- * Light + dark color schemes defined as HSL CSS variables. Components reference
- * these via `bg-background`, `text-foreground` etc. Changing one variable
- * propagates everywhere.
+ * Slate base palette (recruiter-friendly, calm) with a single warm amber
+ * accent reserved for the Dhruva brand mark + active-state affordances
+ * (sort arrows, primary action callouts).
  *
- * The "classy" feel comes from:
- *  - Inter as the body font
- *  - High contrast on neutrals, restrained accent color
- *  - Subtle borders, no gradients
+ * Background is slightly off-white tinted slate so cards (pure white) lift
+ * off the page. A faint dot grid adds quiet texture without competing with
+ * content.
  */
 @layer base {
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 47.4% 11.2%;
+
     --card: 0 0% 100%;
     --card-foreground: 222.2 47.4% 11.2%;
+
     --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
+
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
+
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
+
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
+
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
+
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+
+    /* Single brand accent. Used for the star mark + active sort + primary
+       callouts. Kept as its own token so we can swap to a different hue
+       without hunting through component code. */
+    --brand: 38 92% 50%; /* amber-500 */
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
+    --background: 222.2 47% 8%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+    --card: 222 32% 12%;
     --card-foreground: 210 40% 98%;
     --primary: 210 40% 98%;
     --primary-foreground: 222.2 47.4% 11.2%;
@@ -54,6 +65,7 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+    --brand: 43 96% 56%; /* slightly brighter amber for dark mode contrast */
   }
 }
 
@@ -66,5 +78,21 @@
     font-feature-settings:
       'rlig' 1,
       'calt' 1;
+  }
+}
+
+/* Brand-colored utilities. Kept here so component code stays Tailwind-y. */
+@layer utilities {
+  .text-brand {
+    color: hsl(var(--brand));
+  }
+  .fill-brand {
+    fill: hsl(var(--brand));
+  }
+  .bg-brand {
+    background-color: hsl(var(--brand));
+  }
+  .ring-brand {
+    --tw-ring-color: hsl(var(--brand));
   }
 }

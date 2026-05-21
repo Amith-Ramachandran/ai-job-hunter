@@ -1,22 +1,24 @@
 /**
- * Jobs table.
+ * Jobs page.
  *
- * Sorting:
- *   - Every column header is clickable. Click cycles direction (asc ↔ desc).
- *   - Default sort is "match desc" (best matches first).
+ * Layout:
+ *   - Page header with stats strip (matched / total / avg score)
+ *   - Filter panel (search row, chip rows, active-filters summary)
+ *   - Results table (sticky header, zebra rows, gold active sort)
  *
- * Filtering:
- *   - Free-text search + country + min salary inputs.
- *   - Multi-select chips for seniority and work-model (extracted via LLM).
- *   - Skill typeahead — picks populate `skillsAll[]` (AND semantics).
- *
- * Data fetching: useQuery keyed on the filters object so changing a filter
- * triggers a refetch. `keepPreviousData` keeps the table populated while a
- * new page loads.
+ * Default sort is `match desc`. Click any column header to toggle.
  */
 import { useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronsUpDown, ChevronUp, ExternalLink, X } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronUp,
+  ExternalLink,
+  Search,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import {
   listJobs,
   listTopSkills,
@@ -26,7 +28,7 @@ import {
   type SortBy,
   type SortOrder,
 } from '@/lib/api';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn, formatRelativeTime } from '@/lib/utils';
@@ -44,14 +46,16 @@ const NATURAL_DIRECTION: Record<SortBy, SortOrder> = {
 const SENIORITY_OPTIONS: Seniority[] = ['junior', 'mid', 'senior', 'staff', 'principal'];
 const REMOTE_OPTIONS: RemotePolicy[] = ['remote', 'hybrid', 'on-site'];
 
+const INITIAL_FILTERS: ListJobsParams = {
+  page: 1,
+  pageSize: 20,
+  postedSinceDays: 30,
+  sortBy: 'match',
+  sortOrder: 'desc',
+};
+
 export function JobsPage() {
-  const [filters, setFilters] = useState<ListJobsParams>({
-    page: 1,
-    pageSize: 20,
-    postedSinceDays: 30,
-    sortBy: 'match',
-    sortOrder: 'desc',
-  });
+  const [filters, setFilters] = useState<ListJobsParams>(INITIAL_FILTERS);
 
   const jobsQuery = useQuery({
     queryKey: ['jobs', filters],
@@ -59,8 +63,7 @@ export function JobsPage() {
     placeholderData: keepPreviousData,
   });
 
-  // The skill-chip typeahead pulls from this endpoint. Cached for 5 minutes
-  // because the top-N skills don't change minute to minute.
+  // Top extracted skills — populates the typeahead. Cached 5 min.
   const topSkillsQuery = useQuery({
     queryKey: ['topSkills'],
     queryFn: () => listTopSkills(50),
@@ -70,6 +73,33 @@ export function JobsPage() {
   const totalPages = jobsQuery.data
     ? Math.max(1, Math.ceil(jobsQuery.data.total / (filters.pageSize ?? 20)))
     : 1;
+
+  // Page-level summary stats — read from the current query result so they
+  // always reflect the active filter, not the global corpus.
+  const stats = useMemo(() => {
+    const items = jobsQuery.data?.items ?? [];
+    const withScore = items.filter((j) => typeof j.matchScore === 'number');
+    const avg =
+      withScore.length > 0
+        ? withScore.reduce((s, j) => s + (j.matchScore ?? 0), 0) / withScore.length
+        : null;
+    return {
+      total: jobsQuery.data?.total ?? 0,
+      onPage: items.length,
+      avgPct: avg !== null ? Math.round(avg * 100) : null,
+    };
+  }, [jobsQuery.data]);
+
+  // Track whether ANY of the structured filters are active — used to render
+  // the active-filters chip strip + Clear All button.
+  const hasActiveFilters =
+    !!filters.q ||
+    !!filters.country ||
+    typeof filters.minSalary === 'number' ||
+    filters.remote === true ||
+    (filters.seniorityIn?.length ?? 0) > 0 ||
+    (filters.remotePolicyIn?.length ?? 0) > 0 ||
+    (filters.skillsAll?.length ?? 0) > 0;
 
   function handleSort(col: SortBy) {
     setFilters((f) => {
@@ -91,32 +121,46 @@ export function JobsPage() {
     return next.length > 0 ? next : undefined;
   }
 
+  function clearAll() {
+    setFilters({ ...INITIAL_FILTERS });
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
-        <p className="text-sm text-muted-foreground">
-          Postings ingested from configured sources. The Match column shows
-          how well each job matches your latest CV (cosine similarity, 0–100%).
-          Click any column header to sort.
-        </p>
+      {/* ─── Page header + stats strip ──────────────────────────── */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Jobs</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Postings ingested from public sources, scored against your CV.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <StatPill label="Matches" value={stats.total.toLocaleString()} />
+          <StatPill
+            label="Avg match"
+            value={stats.avgPct !== null ? `${stats.avgPct}%` : '—'}
+            accent
+          />
+        </div>
       </div>
 
+      {/* ─── Filter panel ─────────────────────────────────────── */}
       <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>Combine free-text + structured filters.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Row 1: free-text inputs */}
-          <div className="grid gap-3 md:grid-cols-4">
-            <Input
-              placeholder="Search title, company, description"
-              defaultValue={filters.q ?? ''}
-              onChange={(e) =>
-                setFilters((f) => ({ ...f, q: e.target.value || undefined, page: 1 }))
-              }
-            />
+        <CardContent className="space-y-5 pt-6">
+          {/* Search row: prominent, full-width */}
+          <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search by title or company"
+                defaultValue={filters.q ?? ''}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, q: e.target.value || undefined, page: 1 }))
+                }
+              />
+            </div>
             <Input
               placeholder="Country / location"
               defaultValue={filters.country ?? ''}
@@ -135,19 +179,20 @@ export function JobsPage() {
                 }))
               }
             />
-            <label className="flex items-center gap-2 text-sm">
+            <label className="inline-flex items-center gap-2 whitespace-nowrap px-3 text-sm text-muted-foreground">
               <input
                 type="checkbox"
+                className="accent-foreground"
                 checked={filters.remote ?? false}
                 onChange={(e) =>
                   setFilters((f) => ({ ...f, remote: e.target.checked || undefined, page: 1 }))
                 }
               />
-              Remote only (source flag)
+              Remote-only flag
             </label>
           </div>
 
-          {/* Row 2: chip groups */}
+          {/* Chip rows */}
           <div className="grid gap-4 md:grid-cols-2">
             <ChipGroup
               label="Seniority"
@@ -171,7 +216,7 @@ export function JobsPage() {
             />
           </div>
 
-          {/* Row 3: skills typeahead */}
+          {/* Skill picker (its own row — typeahead needs width) */}
           <SkillsPicker
             selected={filters.skillsAll ?? []}
             suggestions={topSkillsQuery.data ?? []}
@@ -190,14 +235,47 @@ export function JobsPage() {
               }))
             }
           />
+
+          {/* Active-filters strip with "Clear all" — appears only when at
+              least one filter is set. Gives users a single-glance view of
+              what's filtering + a one-click reset. */}
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-2 border-t pt-4 text-xs">
+              <Sparkles className="h-3.5 w-3.5 text-brand" />
+              <span className="text-muted-foreground">Filtering by</span>
+              {filters.q && <ActiveTag>“{filters.q}”</ActiveTag>}
+              {filters.country && <ActiveTag>📍 {filters.country}</ActiveTag>}
+              {typeof filters.minSalary === 'number' && (
+                <ActiveTag>💰 ≥ {filters.minSalary.toLocaleString()}</ActiveTag>
+              )}
+              {filters.remote && <ActiveTag>Remote-only flag</ActiveTag>}
+              {(filters.seniorityIn ?? []).map((s) => (
+                <ActiveTag key={s}>{s}</ActiveTag>
+              ))}
+              {(filters.remotePolicyIn ?? []).map((p) => (
+                <ActiveTag key={p}>{p}</ActiveTag>
+              ))}
+              {(filters.skillsAll ?? []).map((s) => (
+                <ActiveTag key={s}>{s}</ActiveTag>
+              ))}
+              <button
+                type="button"
+                onClick={clearAll}
+                className="ml-auto text-xs text-muted-foreground underline decoration-dotted hover:text-foreground"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
+      {/* ─── Results table ────────────────────────────────────── */}
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b text-left text-muted-foreground">
+              <thead className="sticky top-0 z-10 border-b bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground backdrop-blur">
                 <tr>
                   <SortableHeader col="title" label="Title" filters={filters} onClick={handleSort} />
                   <SortableHeader col="company" label="Company" filters={filters} onClick={handleSort} />
@@ -205,34 +283,40 @@ export function JobsPage() {
                   <SortableHeader col="posted" label="Posted" filters={filters} onClick={handleSort} />
                   <SortableHeader col="match" label="Match" filters={filters} onClick={handleSort} />
                   <SortableHeader col="source" label="Source" filters={filters} onClick={handleSort} />
-                  <th className="px-4 py-3 font-medium"></th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-border [&_tr:nth-child(even)]:bg-muted/20">
                 {jobsQuery.isLoading && !jobsQuery.data && (
                   <tr>
-                    <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={7}>
                       Loading…
                     </td>
                   </tr>
                 )}
                 {jobsQuery.data?.items.length === 0 && (
                   <tr>
-                    <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
-                      No jobs match these filters.
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={7}>
+                      No jobs match these filters. Try removing a chip.
                     </td>
                   </tr>
                 )}
                 {jobsQuery.data?.items.map((job) => (
-                  <tr key={job.id} className="hover:bg-muted/50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{job.title}</div>
+                  <tr
+                    key={job.id}
+                    // Token-based hover (works in both light + dark themes) +
+                    // hairline amber line on the left for the "active row"
+                    // feel without painting a whole-row tint.
+                    className="transition-colors hover:bg-muted/60"
+                  >
+                    <td className="max-w-md px-4 py-3 align-top">
+                      <div className="font-medium leading-tight">{job.title}</div>
                       {job.extractedJson?.required_skills?.length ? (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {job.extractedJson.required_skills.slice(0, 5).map((s) => (
                             <span
                               key={s}
-                              className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground"
+                              className="rounded-sm bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground"
                             >
                               {s}
                             </span>
@@ -245,19 +329,23 @@ export function JobsPage() {
                         </div>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3">{job.company}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="px-4 py-3 align-top">{job.company}</td>
+                    <td className="px-4 py-3 align-top text-muted-foreground">
                       {job.remote ? 'Remote' : (job.location ?? '—')}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="px-4 py-3 align-top text-muted-foreground">
                       {formatRelativeTime(job.postedAt)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
                       <MatchBadge score={job.matchScore} />
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{job.source}</td>
-                    <td className="px-4 py-3">
-                      <Button asChild variant="ghost" size="sm">
+                    <td className="px-4 py-3 align-top text-muted-foreground">{job.source}</td>
+                    <td className="px-4 py-3 align-top">
+                      <Button
+                        asChild
+                        size="sm"
+                        className="bg-brand text-foreground hover:bg-brand/90"
+                      >
                         <a href={job.applyUrl} target="_blank" rel="noopener noreferrer">
                           Apply <ExternalLink className="ml-1 h-3 w-3" />
                         </a>
@@ -274,7 +362,7 @@ export function JobsPage() {
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
           {jobsQuery.data
-            ? `Page ${filters.page ?? 1} of ${totalPages} · ${jobsQuery.data.total.toLocaleString()} total`
+            ? `Page ${filters.page ?? 1} of ${totalPages} · ${stats.onPage} on this page`
             : ''}
         </span>
         <div className="flex gap-2">
@@ -300,10 +388,45 @@ export function JobsPage() {
   );
 }
 
-/**
- * A row of toggleable chips. Click to add to selection, click again to remove.
- * Active chips show in primary color; inactive in muted.
- */
+/* ─── small components ───────────────────────────────────────── */
+
+function StatPill({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-lg border bg-card px-4 py-2 text-right shadow-sm',
+        accent && 'border-amber-200/60 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-900/20',
+      )}
+    >
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div
+        className={cn(
+          'text-xl font-semibold tabular-nums',
+          accent && 'text-amber-700 dark:text-amber-300',
+        )}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ActiveTag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border bg-secondary/60 px-2 py-0.5 text-xs">
+      {children}
+    </span>
+  );
+}
+
 function ChipGroup<T extends string>({
   label,
   options,
@@ -318,7 +441,9 @@ function ChipGroup<T extends string>({
   const set = new Set(selected);
   return (
     <div>
-      <div className="mb-2 text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
       <div className="flex flex-wrap gap-1.5">
         {options.map((opt) => {
           const isActive = set.has(opt);
@@ -328,10 +453,10 @@ function ChipGroup<T extends string>({
               type="button"
               onClick={() => onToggle(opt)}
               className={cn(
-                'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                'rounded-full border px-3 py-1 text-xs font-medium transition-all',
                 isActive
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-input bg-background text-muted-foreground hover:bg-secondary',
+                  ? 'border-foreground bg-foreground text-background shadow-sm'
+                  : 'border-input bg-background text-muted-foreground hover:border-foreground/30 hover:bg-secondary',
               )}
             >
               {opt}
@@ -343,11 +468,6 @@ function ChipGroup<T extends string>({
   );
 }
 
-/**
- * Skill picker: free-text input with a dropdown of top extracted skills.
- * Selected skills appear as removable chips above the input. AND semantics —
- * a job must include EVERY selected skill in its required_skills array.
- */
 function SkillsPicker({
   selected,
   suggestions,
@@ -373,8 +493,8 @@ function SkillsPicker({
 
   return (
     <div>
-      <div className="mb-2 text-xs font-medium text-muted-foreground">
-        Required skills (ALL of)
+      <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Required skills <span className="lowercase">(all of)</span>
       </div>
 
       {selected.length > 0 && (
@@ -382,13 +502,13 @@ function SkillsPicker({
           {selected.map((s) => (
             <span
               key={s}
-              className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+              className="inline-flex items-center gap-1 rounded-full bg-foreground px-3 py-1 text-xs font-medium text-background"
             >
               {s}
               <button
                 type="button"
                 onClick={() => onRemove(s)}
-                className="rounded-full hover:bg-primary-foreground/20"
+                className="rounded-full hover:bg-background/20"
                 aria-label={`Remove ${s}`}
               >
                 <X className="h-3 w-3" />
@@ -406,8 +526,6 @@ function SkillsPicker({
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 100)}
           onKeyDown={(e) => {
-            // Enter adds the typed value as a custom skill (lets you filter
-            // by skills not yet present in the top-N list).
             if (e.key === 'Enter' && text.trim()) {
               e.preventDefault();
               onAdd(text.trim());
@@ -422,8 +540,6 @@ function SkillsPicker({
                 key={s.skill}
                 type="button"
                 onMouseDown={(e) => {
-                  // onMouseDown beats onBlur — keeps the dropdown open
-                  // long enough for the click to register.
                   e.preventDefault();
                   onAdd(s.skill);
                   setText('');
@@ -441,10 +557,6 @@ function SkillsPicker({
   );
 }
 
-/**
- * Clickable column header. Shows an inactive double-arrow when not the current
- * sort, and a single arrow (up = asc / down = desc) when active.
- */
 function SortableHeader({
   col,
   label,
@@ -465,7 +577,7 @@ function SortableHeader({
         onClick={() => onClick(col)}
         className={cn(
           'inline-flex items-center gap-1 transition-colors hover:text-foreground',
-          isActive && 'text-foreground',
+          isActive && 'text-brand',
         )}
       >
         {label}
@@ -483,13 +595,6 @@ function SortableHeader({
   );
 }
 
-/**
- * Renders a colored badge for a match score.
- * - null = "—" (not yet scored)
- * - >= 0.7 = strong (green)
- * - 0.5–0.7 = moderate (amber)
- * - < 0.5 = weak (muted)
- */
 function MatchBadge({ score }: { score: number | null }) {
   if (score === null) {
     return <span className="text-xs text-muted-foreground">—</span>;
