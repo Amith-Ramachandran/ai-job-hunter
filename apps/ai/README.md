@@ -1,6 +1,6 @@
 # `ai-job-hunter-ai` — Python FastAPI service
 
-The AI layer for Dhruva. Phase 2 Slice 2.1 ships: embeddings + Qdrant upsert + match scoring.
+The AI layer for Dhruva. Phase 2 Slices 2.1 + 2.2 ship: embeddings + Qdrant upsert + match scoring + LLM-driven structured JD extraction.
 
 ## Endpoints
 
@@ -11,6 +11,7 @@ The AI layer for Dhruva. Phase 2 Slice 2.1 ships: embeddings + Qdrant upsert + m
 | `POST /embed/cv` | Section-aware chunk → embed → upsert to `cv_chunks` collection |
 | `POST /embed/job` | Recursive chunk → embed → upsert to `job_chunks` collection |
 | `POST /score/cv` | Compute per-job match scores for one CV (vector search + aggregation) |
+| `POST /extract/job` | LLM-driven structured-JSON extraction from a JD (gpt-4o-mini + OpenAI structured outputs) |
 
 ## Architecture
 
