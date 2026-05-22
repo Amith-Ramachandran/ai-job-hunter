@@ -2,7 +2,7 @@
 
 A personal AI-powered job-hunt assistant. Ingests jobs from public sources, ranks them against your CV, and lets you chat over your pipeline.
 
-> **Status — Phase 2 Slice 2.1.** Frontend, API, Google auth, CV upload (with PDF parsing), 5-source job ingestion, CV/JD embeddings into Qdrant, and per-job match scores in the UI.
+> **Status — Phase 2 Slice 2.2.** Frontend, API, Google auth, CV upload (with PDF parsing), 5-source job ingestion (capped at last 7 days), CV/JD embeddings into Qdrant, per-job match scores, **LLM-extracted structured fields per JD (seniority / skills / salary / remote policy / role type)**, and **smart filter chips** on the Jobs page.
 
 ## Architecture
 
@@ -124,7 +124,7 @@ After scoring completes, the Jobs page Match column will populate.
 |---|---|---|
 | **1** | Frontend + API + DB + auth + CV upload + job ingestion (no AI) | ✓ Done |
 | **2.1** | Embeddings (CV + JDs) → Qdrant + match-score column on Jobs page | ✓ Done |
-| 2.2 | LLM-driven structured JD extraction + smart filter chips | Planned |
+| **2.2** | LLM-driven structured JD extraction + smart filter chips | ✓ Done |
 | 2.3 | RAG chat with tool-calling agent + cover-letter drafting | Planned |
 | 2.4 | Evals (golden set + NDCG) + cost/token observability dashboard | Planned |
 | 3 | Re-ranking, hybrid search, MCP server | Planned |

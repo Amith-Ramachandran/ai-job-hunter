@@ -53,6 +53,22 @@ There is no refresh-token flow. Google ID tokens are valid for ~1h; once expired
 
 The Jobs page shows a **Match** column with cosine similarity (0–100%) between each job's chunked JD and the user's latest CV. Column headers are clickable; default sort is `match desc`. Scores come from the API's `matchScore` field, populated by the Python AI service when a CV is embedded or `POST /ai/score-now` is hit.
 
+## Smart filters (Slice 2.2)
+
+The Jobs page filter row exposes the LLM-extracted structured fields as chips:
+- **Seniority** — junior / mid / senior / staff / principal (multi-select)
+- **Work model** — remote / hybrid / on-site (multi-select)
+- **Required skills** — typeahead pulling from `/jobs/top-skills`; AND semantics (every selected skill must appear in the JD's `required_skills`)
+
+Active filters show in a strip with one-click "Clear all". Each row also surfaces the first 5 extracted skills as inline badges + overflow count.
+
+## Visual style
+
+- **Dark by default** — slate palette with a single warm amber accent reserved for the brand mark + active sort indicators
+- **Sidebar navigation** with avatar + sign-out card docked at the bottom (mobile falls back to a compact top header)
+- **Stat pills** at the top of the Jobs page summarise the current filtered set (matches count + average match %)
+- **Sticky table header** with zebra rows + token-based hover
+
 ## Running
 
 ```bash
