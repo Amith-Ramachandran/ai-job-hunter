@@ -2,38 +2,43 @@
 
 A personal AI-powered job-hunt assistant. Ingests jobs from public sources, ranks them against your CV, and lets you chat over your pipeline.
 
-> **Status — Phase 2 Slice 2.2.** Frontend, API, Google auth, CV upload (with PDF parsing), 5-source job ingestion (capped at last 7 days), CV/JD embeddings into Qdrant, per-job match scores, **LLM-extracted structured fields per JD (seniority / skills / salary / remote policy / role type)**, and **smart filter chips** on the Jobs page.
+> **Status — Phase 2 Slice 2.3.** Frontend, API, cookie-session auth (HTTPOnly access JWT + rotating refresh tokens), CV upload (with PDF parsing), 5-source job ingestion (capped at last 7 days), CV/JD embeddings into Qdrant, per-job match scores, LLM-extracted structured fields per JD (seniority / skills / salary / remote policy / role type), smart filter chips on the Jobs page, and a **RAG chat agent with tool-calling + streamed cover-letter drafts** (LangChain `create_agent` over LangGraph, SSE streaming, full per-message cost/token observability persisted in Postgres).
 
 ## Architecture
 
 ```
 ┌─────────────────┐
-│  React SPA      │  Google OAuth client-side
-│  (Vite)         │  Sends Google ID token in Authorization header
+│  React SPA      │  Google OAuth client-side → /auth/google
+│  (Vite)         │  HTTPOnly cookies; SSE consumed via fetch
 └────────┬────────┘
-         │ HTTP
+         │ HTTP (cookie-auth) + SSE
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  NestJS API                                                  │
-│  • Verifies Google ID token                                  │
-│  • Owns: users, cvs, jobs, applications, job_scores          │
+│  • Cookie sessions: short-lived access JWT + rotating        │
+│    opaque refresh tokens (with reuse detection)              │
+│  • Owns: users, cvs, jobs, applications, job_scores,         │
+│    chat_sessions, chat_messages (model/tokens/cost/latency)  │
 │  • Owns: BullMQ queues — ingest-jobs / embed-cv /            │
-│    embed-job / score-cv                                      │
+│    embed-job / extract-job / score-cv                        │
 │  • Parses uploaded PDFs (pdf-parse)                          │
-│  • Calls Python AI service over HTTP for embed / score       │
+│  • Proxies /chat SSE from Python → browser (cookie boundary) │
+│  • Exposes /internal/* to Python over shared-bearer auth     │
 └────┬───────────────────────────────────────┬─────────────────┘
      │                                       │
-     ▼                                       ▼ HTTP
-┌──────────┐                       ┌─────────────────────┐
-│ Postgres │                       │  Python FastAPI     │
-└──────────┘                       │  (AI service)       │
-                                   │  • OpenAI embeds    │
-                                   │  • Qdrant upserts   │
-                                   │  • Match scoring    │
-                                   │  • (Slice 2.2: LLM  │
-                                   │    extraction)      │
-                                   │  • (Slice 2.3: chat)│
-                                   └──────┬──────────────┘
+     ▼                                       ▼ HTTP + SSE
+┌──────────┐                       ┌─────────────────────────┐
+│ Postgres │                       │  Python FastAPI         │
+└──────────┘                       │  (AI service)           │
+                                   │  • OpenAI embeds        │
+                                   │  • Qdrant upserts       │
+                                   │  • Match scoring        │
+                                   │  • LLM JD extraction    │
+                                   │  • LangChain agent      │
+                                   │    (create_agent) +     │
+                                   │    streamed cover       │
+                                   │    letters (SSE)        │
+                                   └──────┬──────────────────┘
                                           │
                                     ┌─────▼──────┐
                                     │  Qdrant    │
@@ -79,9 +84,9 @@ cp apps/web/.env.example apps/web/.env
 cp apps/ai/.env.example apps/ai/.env
 
 # 3. Fill in required values:
-#    apps/api/.env: GOOGLE_CLIENT_ID
+#    apps/api/.env: GOOGLE_CLIENT_ID, JWT_SECRET, INTERNAL_SERVICE_TOKEN
 #    apps/web/.env: VITE_GOOGLE_CLIENT_ID (same value as above)
-#    apps/ai/.env:  OPENAI_API_KEY
+#    apps/ai/.env:  OPENAI_API_KEY, INTERNAL_SERVICE_TOKEN (must match apps/api/.env)
 
 # 4. Start local infra (Postgres, Redis, LocalStack, Qdrant, RedisInsight)
 pnpm dev:infra
@@ -105,15 +110,16 @@ Open [http://localhost:5173](http://localhost:5173), sign in, upload a CV (PDF o
 The first time you run ingestion, jobs land in Postgres with `embedding_status = 'pending'` but no vectors yet. To embed the existing corpus in one shot:
 
 ```bash
-# Get a bearer token from browser DevTools console:
-#   JSON.parse(localStorage.getItem('ai-job-hunter:auth')).state.idToken
-TOKEN="ey..."
+# Sessions are HTTPOnly cookies — easiest way to call /ai/* from curl
+# is to copy the access-token cookie value out of DevTools → Application →
+# Cookies → http://localhost:3000 → ajh_session
+COOKIE='ajh_session=...'
 
-curl -X POST http://localhost:3000/ai/backfill-jobs -H "Authorization: Bearer $TOKEN"
+curl -X POST http://localhost:3000/ai/backfill-jobs -H "Cookie: $COOKIE"
 # → {"enqueued": <N>}
 
 # Watch the embed-job queue drain (5–15 min). Then score your CV:
-curl -X POST http://localhost:3000/ai/score-now    -H "Authorization: Bearer $TOKEN"
+curl -X POST http://localhost:3000/ai/score-now    -H "Cookie: $COOKIE"
 ```
 
 After scoring completes, the Jobs page Match column will populate.
@@ -125,9 +131,11 @@ After scoring completes, the Jobs page Match column will populate.
 | **1** | Frontend + API + DB + auth + CV upload + job ingestion (no AI) | ✓ Done |
 | **2.1** | Embeddings (CV + JDs) → Qdrant + match-score column on Jobs page | ✓ Done |
 | **2.2** | LLM-driven structured JD extraction + smart filter chips | ✓ Done |
-| 2.3 | RAG chat with tool-calling agent + cover-letter drafting | Planned |
-| 2.4 | Evals (golden set + NDCG) + cost/token observability dashboard | Planned |
-| 3 | Re-ranking, hybrid search, MCP server | Planned |
+| **2.3** | RAG chat with tool-calling agent + streamed cover-letter drafts | ✓ Done |
+| 2.4 | Evals (golden set + RAGAS / NDCG) + cost/token observability dashboard | Planned |
+| 3 | Hybrid retrieval (BM25 + dense), re-ranking, LangSmith/Langfuse tracing, MCP server | Planned |
+
+See [docs/genai-implementation-audit.md](docs/genai-implementation-audit.md) for a honest scorecard of which industry-standard GenAI practices are in place today vs deliberately deferred.
 
 ## Job sources
 
