@@ -30,19 +30,17 @@ export class JobsRepository {
     });
 
     const descriptionChanged = existing && existing.descriptionMd !== job.descriptionMd;
-    const isNew = !existing;
 
     // Step 2 — only stamp status fields when work actually needs to happen.
     // For an unchanged row, leave embeddingStatus + extractedJson alone so
     // the downstream queues see a "done" job and don't fire.
-    const statusReset: Prisma.JobUpdateInput =
-      descriptionChanged
-        ? {
-            embeddingStatus: 'pending',
-            embeddedAt: null,
-            extractedJson: Prisma.DbNull,
-          }
-        : {};
+    const statusReset: Prisma.JobUpdateInput = descriptionChanged
+      ? {
+          embeddingStatus: 'pending',
+          embeddedAt: null,
+          extractedJson: Prisma.DbNull,
+        }
+      : {};
 
     return this.prisma.job.upsert({
       where: { source_externalId: { source: job.source, externalId: job.externalId } },

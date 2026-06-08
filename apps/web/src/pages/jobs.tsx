@@ -31,6 +31,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { CoverLetterButton } from '@/components/chat/cover-letter-button';
 import { cn, formatRelativeTime } from '@/lib/utils';
 
 /** First-click direction for each column. Subsequent clicks toggle. */
@@ -341,15 +342,22 @@ export function JobsPage() {
                     </td>
                     <td className="px-4 py-3 align-top text-muted-foreground">{job.source}</td>
                     <td className="px-4 py-3 align-top">
-                      <Button
-                        asChild
-                        size="sm"
-                        className="bg-brand text-foreground hover:bg-brand/90"
-                      >
-                        <a href={job.applyUrl} target="_blank" rel="noopener noreferrer">
-                          Apply <ExternalLink className="ml-1 h-3 w-3" />
-                        </a>
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <CoverLetterButton
+                          jobId={job.id}
+                          jobTitle={job.title}
+                          company={job.company}
+                        />
+                        <Button
+                          asChild
+                          size="sm"
+                          className="bg-brand text-foreground hover:bg-brand/90"
+                        >
+                          <a href={job.applyUrl} target="_blank" rel="noopener noreferrer">
+                            Apply <ExternalLink className="ml-1 h-3 w-3" />
+                          </a>
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

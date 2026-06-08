@@ -226,3 +226,112 @@ export async function listTopSkills(limit = 50): Promise<SkillTally[]> {
   const { data } = await api.get<SkillTally[]>('/jobs/top-skills', { params: { limit } });
   return data;
 }
+
+// ─── Chat (Slice 2.3) ─────────────────────────────────────────────────────
+
+export type ChatRole = 'user' | 'assistant' | 'tool';
+
+export interface ChatSessionSummary {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  content: string;
+  toolName: string | null;
+  citedJobIds: string[];
+  createdAt: string;
+}
+
+export interface ChatSessionDetail extends ChatSessionSummary {
+  messages: ChatMessage[];
+}
+
+export async function listChatSessions(): Promise<ChatSessionSummary[]> {
+  const { data } = await api.get<ChatSessionSummary[]>('/chat/sessions');
+  return data;
+}
+
+export async function getChatSession(id: string): Promise<ChatSessionDetail> {
+  const { data } = await api.get<ChatSessionDetail>(`/chat/sessions/${id}`);
+  return data;
+}
+
+export async function deleteChatSession(id: string): Promise<void> {
+  await api.delete(`/chat/sessions/${id}`);
+}
+
+/**
+ * Discriminated union of SSE events emitted by /chat/stream + /chat/cover-letter.
+ */
+export type ChatStreamEvent =
+  | { type: 'session'; sessionId: string; title: string }
+  | { type: 'token'; content: string }
+  | { type: 'tool_call'; name: string; args: unknown; id: string }
+  | { type: 'tool_result'; name: string; id: string; result_preview?: unknown }
+  | { type: 'done'; model: string; tokens_in?: number; tokens_out?: number; cited_job_ids?: string[] }
+  | { type: 'persisted'; messageId: string; sessionId: string; latencyMs: number; costUsd: number | null }
+  | { type: 'error'; message: string };
+
+export async function* streamChatTurn(
+  body: { content: string; sessionId?: string },
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
+  yield* postSse('/chat/stream', body, signal);
+}
+
+export async function* streamCoverLetter(
+  body: { jobId: string },
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
+  yield* postSse('/chat/cover-letter', body, signal);
+}
+
+/**
+ * SSE-over-fetch. EventSource doesn't support POST or cookie credentials in
+ * the same call, so we use fetch + ReadableStream instead.
+ */
+async function* postSse(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
+  const res = await fetch(`${baseURL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    yield { type: 'error', message: `${res.status} ${res.statusText}` };
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const raw = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      for (const line of raw.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload) continue;
+        try {
+          yield JSON.parse(payload) as ChatStreamEvent;
+        } catch {
+          // skip malformed line
+        }
+      }
+    }
+  }
+}

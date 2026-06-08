@@ -13,3 +13,4 @@ default for fail-fast.
 import os
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key-for-collection-only")
+os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-internal-token-collection-only")

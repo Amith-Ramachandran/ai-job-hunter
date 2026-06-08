@@ -1,23 +1,22 @@
 /**
  * Chat module (Slice 2.3).
  *
- * Currently a stub — wires nothing. The next commit fills in:
- *   - chat.controller.ts: POST /chat SSE proxy, sessions CRUD, internal callbacks
- *   - chat.service.ts: forwards to Python with INTERNAL_SERVICE_TOKEN,
- *     streams events through, writes user + assistant + tool messages
- *   - DTOs for chat send + session list
+ * Wires:
+ *   - ChatController: SSE turn endpoint + cover-letter endpoint + sessions CRUD
+ *   - ChatService: forwards to Python with the internal bearer, writes
+ *     user + assistant messages, computes per-message cost from token usage
  *
- * Stubbing now keeps `AppModule` importing it cleanly so the Slice 2.3
- * foundation (internal auth, chat schema, migration) can ship as its own
- * reviewable commit.
+ * AuthModule is imported so SessionAuthGuard is available on every route.
  */
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { ChatController } from './chat.controller';
+import { ChatService } from './chat.service';
 
 @Module({
   imports: [AuthModule],
-  providers: [],
-  controllers: [],
+  providers: [ChatService],
+  controllers: [ChatController],
   exports: [],
 })
 export class ChatModule {}
