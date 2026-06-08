@@ -19,6 +19,7 @@ from typing import Any
 import structlog
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 from app.chat.nest_client import get_nest_client
 from app.chat.tools import build_tools
@@ -79,7 +80,17 @@ async def run_agent_stream(
     """
     nest = get_nest_client()
     tools = build_tools(user_id=user_id, cv_id=cv_id, nest=nest)
-    agent = create_agent(model=f"openai:{settings.openai_chat_model}", tools=tools)
+    # Build ChatOpenAI explicitly with our settings-loaded key.
+    # init_chat_model("openai:...") reads OPENAI_API_KEY straight from
+    # os.environ and ignores our pydantic Settings — keep credentials
+    # flowing through one source of truth.
+    chat_model = ChatOpenAI(
+        model=settings.openai_chat_model,
+        api_key=settings.openai_api_key,
+        temperature=0.2,
+        streaming=True,
+    )
+    agent = create_agent(model=chat_model, tools=tools)
     lc_messages = _to_lc_messages(messages)
 
     cited_ids: set[str] = set()

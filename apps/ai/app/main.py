@@ -26,6 +26,11 @@ structlog.configure(
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
+        # format_exc_info converts exc_info=True into a rendered `exception`
+        # string field. Without it, `log.exception(...)` only emits
+        # `exc_info: true` and the traceback is lost — which is what bit us
+        # when the agent stream failed silently.
+        structlog.processors.format_exc_info,
         structlog.processors.JSONRenderer(),
     ],
 )

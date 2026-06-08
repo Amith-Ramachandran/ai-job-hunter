@@ -13,6 +13,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Send, Sparkles, Trash2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   deleteChatSession,
   getChatSession,
@@ -57,10 +59,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   });
 
   // Full message history for the active session.
+  // We deliberately disable while streaming: Nest persists the user message at
+  // the start of a turn, so a mid-stream refetch would render both the
+  // persisted user message AND the optimisticUserMsg bubble (duplicate). The
+  // post-stream invalidateQueries call re-enables and refetches once.
   const sessionQuery = useQuery({
     queryKey: ['chat', 'session', activeSessionId],
     queryFn: () => getChatSession(activeSessionId!),
-    enabled: !!activeSessionId && open,
+    enabled: !!activeSessionId && open && !isStreaming,
     staleTime: 10_000,
   });
 
@@ -264,6 +270,54 @@ interface MessageBubbleProps {
   citedJobIds: string[];
 }
 
+/** Markdown for assistant bubbles — narrow allowlist of tags styled to match
+ * the chat bubble. We intentionally don't use a generic `prose` class so we
+ * keep tight control of the bubble's typography. */
+function MarkdownBody({ content }: { content: string }) {
+  return (
+    <div className="space-y-2 [&_p]:leading-relaxed [&_p+p]:mt-2">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children, ...rest }) => (
+            <a
+              {...rest}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand underline-offset-2 hover:underline"
+            >
+              {children}
+            </a>
+          ),
+          ul: ({ children, ...rest }) => (
+            <ul {...rest} className="list-disc space-y-0.5 pl-5">
+              {children}
+            </ul>
+          ),
+          ol: ({ children, ...rest }) => (
+            <ol {...rest} className="list-decimal space-y-0.5 pl-5">
+              {children}
+            </ol>
+          ),
+          code: ({ children, ...rest }) => (
+            <code {...rest} className="rounded bg-background/60 px-1 py-0.5 font-mono text-[12px]">
+              {children}
+            </code>
+          ),
+          strong: ({ children, ...rest }) => (
+            <strong {...rest} className="font-semibold">
+              {children}
+            </strong>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 function MessageBubble({ role, content, citedJobIds }: MessageBubbleProps) {
   // Tool messages aren't shown in the bubble UI — they're trace data,
   // useful for debugging but noisy for end users.
@@ -278,7 +332,14 @@ function MessageBubble({ role, content, citedJobIds }: MessageBubbleProps) {
             : 'bg-secondary/60 text-foreground',
         )}
       >
-        <div className="whitespace-pre-wrap">{content}</div>
+        {role === 'assistant' ? (
+          // Assistant output is markdown (the agent prompt asks for it). User
+          // bubbles stay plain text so user-typed asterisks/brackets aren't
+          // accidentally rendered.
+          <MarkdownBody content={content} />
+        ) : (
+          <div className="whitespace-pre-wrap">{content}</div>
+        )}
         {role === 'assistant' && citedJobIds.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1 border-t border-border/40 pt-2 text-[10px] text-muted-foreground">
             <span>Cited:</span>
