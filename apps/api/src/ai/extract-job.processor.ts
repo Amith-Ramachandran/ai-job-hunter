@@ -30,10 +30,16 @@ export class ExtractJobProcessor extends WorkerHost {
   async process(task: Job<ExtractJobJobData>) {
     const job = await this.prisma.job.findUnique({
       where: { id: task.data.jobId },
-      select: { id: true, descriptionMd: true },
+      select: { id: true, descriptionMd: true, extractedJson: true },
     });
     if (!job) {
       this.logger.warn({ jobId: task.data.jobId }, 'Job not found, skipping extract');
+      return { skipped: true };
+    }
+    // Token-leak defence: if extracted_json already populated, somebody
+    // upstream enqueued us by mistake. Don't burn another LLM call.
+    if (job.extractedJson !== null && job.extractedJson !== undefined) {
+      this.logger.debug({ jobId: job.id }, 'Already extracted, skipping');
       return { skipped: true };
     }
     if (!job.descriptionMd?.trim()) {
