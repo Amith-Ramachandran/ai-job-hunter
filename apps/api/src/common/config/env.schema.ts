@@ -48,6 +48,13 @@ export const envSchema = z.object({
 
   AI_SERVICE_URL: z.string().url().default('http://localhost:8000'),
 
+  // Shared secret for internal service-to-service calls between Nest and the
+  // Python AI service. Carried as `Authorization: Bearer <token>` on calls
+  // the Python tools make back into Nest (since Python can't read the user's
+  // HttpOnly session cookie). Must be high-entropy in production; 32+ chars.
+  // In dev a sensible default keeps boot frictionless.
+  INTERNAL_SERVICE_TOKEN: z.string().min(16).default('dev-only-internal-token-please-rotate'),
+
   // How far back to fetch on ingestion. Even on an empty DB, the cutoff is
   // applied so we never burn API quota / OpenAI tokens on stale postings.
   // For incremental runs after the first, the natural `lastPostedAt - 6h`

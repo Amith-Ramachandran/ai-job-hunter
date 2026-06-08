@@ -14,9 +14,14 @@ dependencies = [
   "openai>=1.54.3",
   "qdrant-client>=1.12.1",
   "tiktoken>=0.8.0",
-  "langchain>=0.3.7",
-  "langchain-openai>=0.2.5",
-  "langchain-text-splitters>=0.3.2",
+  "langchain>=1.0.0",
+  "langchain-openai>=1.0.0",
+  "langchain-text-splitters>=1.0.0",
+  # LangGraph is pulled in transitively by langchain.create_agent (which runs
+  # on a LangGraph state machine under the hood). Pinning it explicitly so we
+  # control the version and can swap to direct LangGraph usage later without
+  # a dependency surprise.
+  "langgraph>=1.0.0",
 ]
 
 [project.optional-dependencies]
