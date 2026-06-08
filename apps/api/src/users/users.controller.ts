@@ -1,13 +1,12 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { GoogleAuthGuard } from '../auth/google-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
+import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import { UsersService } from './users.service';
 
 @ApiTags('users')
-@ApiBearerAuth()
-@UseGuards(GoogleAuthGuard)
+@UseGuards(SessionAuthGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly users: UsersService) {}

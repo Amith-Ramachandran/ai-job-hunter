@@ -26,11 +26,40 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  cvs          Cv[]
-  applications Application[]
-  scores       JobScore[]
+  cvs           Cv[]
+  applications  Application[]
+  scores        JobScore[]
+  refreshTokens RefreshToken[]
 
   @@map("users")
+}
+
+// Server-side records for opaque refresh tokens. We never store the raw secret
+// — only a SHA-256 hash — so a DB leak doesn't hand attackers live sessions.
+//
+// On every successful refresh we rotate: the presented token is marked revoked,
+// a fresh one is issued, and `replacedById` links them. If a token that's
+// already revoked is ever presented again, that's a theft signal — we revoke
+// the entire chain for that user (forces re-login on every device).
+model RefreshToken {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  // SHA-256(hex) of the opaque secret we put in the cookie.
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  revokedAt    DateTime? @map("revoked_at")
+  // Points at the token that superseded this one on rotation. Lets us walk a
+  // chain and revoke siblings on reuse detection.
+  replacedById String?   @map("replaced_by_id")
+  // Light telemetry to help a user diagnose "what device is signed in?" later.
+  userAgent    String?   @map("user_agent")
+  ip           String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 model Cv {

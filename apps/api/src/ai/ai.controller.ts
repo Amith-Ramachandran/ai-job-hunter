@@ -11,16 +11,15 @@
  * every CV upload.
  */
 import { Controller, NotFoundException, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { GoogleAuthGuard } from '../auth/google-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
+import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AiService } from './ai.service';
 
 @ApiTags('ai')
-@ApiBearerAuth()
-@UseGuards(GoogleAuthGuard)
+@UseGuards(SessionAuthGuard)
 @Controller('ai')
 export class AiController {
   constructor(

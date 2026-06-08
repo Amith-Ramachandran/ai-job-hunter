@@ -1,38 +1,76 @@
 /**
  * Axios instance for talking to the Nest API.
  *
- * The interceptor pulls the Google ID token from the auth store on every
- * request — no component has to remember to attach it. If the API responds
- * 401, we clear the auth store, which causes ProtectedRoute to redirect to
- * /login.
+ * Auth: the API issues session cookies (HttpOnly `dhruva_at` + `dhruva_rt`)
+ * which the browser attaches automatically as long as we set
+ * `withCredentials: true`. There is no Authorization header to manage on the
+ * client — and importantly, JS can't read the cookies, so XSS can't grab
+ * them.
+ *
+ * 401 handling: a single in-flight `POST /auth/refresh` rotates the cookie
+ * pair; subsequent failing requests queue behind it and replay on success.
+ * If refresh itself 401s, we clear local user state and let
+ * ProtectedRoute bounce the user to /login.
  */
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/auth.store';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 export const api = axios.create({
   baseURL,
+  // Send/receive the HttpOnly session cookies.
+  withCredentials: true,
   // Reasonable default for the kinds of requests this app makes — overrides
   // can be passed per-call (e.g., longer timeout for CV upload).
   timeout: 15_000,
 });
 
-api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().idToken;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+// ─── Refresh-on-401 with single-flight queue ─────────────────────────────
+//
+// If two requests fire simultaneously and both 401, we only want ONE
+// /auth/refresh — every other request waits for that single rotation, then
+// replays. The naive per-request retry would race and double-rotate the
+// refresh token (which would trigger reuse detection and kill the session).
+
+let refreshInFlight: Promise<void> | null = null;
+
+type Retryable = InternalAxiosRequestConfig & { _retried?: boolean };
+
+async function refreshOnce(): Promise<void> {
+  if (!refreshInFlight) {
+    refreshInFlight = api
+      .post('/auth/refresh')
+      .then(() => undefined)
+      .finally(() => {
+        refreshInFlight = null;
+      });
   }
-  return config;
-});
+  return refreshInFlight;
+}
 
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Token has expired or been rejected. Clear local state so the next
-      // navigation lands on /login.
-      useAuthStore.getState().signOut();
+  async (error: AxiosError) => {
+    const original = error.config as Retryable | undefined;
+    const status = error.response?.status;
+
+    // Conditions for attempting a refresh:
+    //  - 401 on a request that isn't itself /auth/refresh or /auth/google
+    //    (those should fail cleanly, not loop)
+    //  - we haven't already tried to refresh-and-retry this request
+    const url = original?.url ?? '';
+    const isAuthEndpoint = url.includes('/auth/refresh') || url.includes('/auth/google');
+    if (status === 401 && original && !original._retried && !isAuthEndpoint) {
+      original._retried = true;
+      try {
+        await refreshOnce();
+        return api.request(original as AxiosRequestConfig);
+      } catch {
+        // Refresh failed → session is genuinely dead. Clear local user so
+        // ProtectedRoute redirects to /login.
+        useAuthStore.getState().signOut();
+      }
     }
     return Promise.reject(error);
   },
@@ -141,9 +179,18 @@ export interface SkillTally {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
 
+export async function exchangeGoogleIdToken(idToken: string): Promise<User> {
+  const { data } = await api.post<User>('/auth/google', { idToken });
+  return data;
+}
+
 export async function fetchMe(): Promise<User> {
   const { data } = await api.get<User>('/auth/me');
   return data;
+}
+
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout');
 }
 
 // ─── CVs ──────────────────────────────────────────────────────────────────

@@ -1,30 +1,40 @@
 /**
  * Login page.
  *
- * Uses Google's pre-styled GoogleLogin button. On success, we get a
- * `credential` (the ID token). We store it + decode the basic profile so
- * the UI has something to show before the first /auth/me round-trip.
+ * Uses Google's pre-styled GoogleLogin button. On success we get a
+ * `credential` (the Google ID token) — we POST it to /auth/google which
+ * exchanges it for an HttpOnly session-cookie pair. The Google token is then
+ * thrown away; we never persist it client-side.
  */
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { GoogleLogin } from '@react-oauth/google';
-import { jwtDecode } from 'jwt-decode';
 import { Star } from 'lucide-react';
+import { exchangeGoogleIdToken } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-interface GoogleIdTokenClaims {
-  sub: string;
-  email: string;
-  name?: string;
-  picture?: string;
-}
-
 export function LoginPage() {
   const navigate = useNavigate();
-  const signIn = useAuthStore((s) => s.signIn);
+  const queryClient = useQueryClient();
+  const setUser = useAuthStore((s) => s.setUser);
   const { isAuthenticated } = useAuth();
+
+  const exchangeMutation = useMutation({
+    mutationFn: exchangeGoogleIdToken,
+    onSuccess: (user) => {
+      setUser(user);
+      // Seed the /auth/me cache so the dashboard doesn't re-fetch immediately
+      // after navigation.
+      queryClient.setQueryData(['me'], user);
+      navigate('/', { replace: true });
+    },
+    onError: (err) => {
+      console.error('Google session exchange failed', err);
+    },
+  });
 
   // If they're already signed in, bounce to the dashboard.
   useEffect(() => {
@@ -56,15 +66,7 @@ export function LoginPage() {
             onSuccess={(credentialResponse) => {
               const idToken = credentialResponse.credential;
               if (!idToken) return;
-              const claims = jwtDecode<GoogleIdTokenClaims>(idToken);
-              signIn(idToken, {
-                id: '',                          // backend assigns; refreshed by /auth/me
-                googleSub: claims.sub,
-                email: claims.email,
-                name: claims.name ?? null,
-                picture: claims.picture ?? null,
-              });
-              navigate('/', { replace: true });
+              exchangeMutation.mutate(idToken);
             }}
             onError={() => {
               console.error('Google sign-in failed');

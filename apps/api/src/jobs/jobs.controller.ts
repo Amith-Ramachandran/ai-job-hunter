@@ -1,5 +1,5 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -13,7 +13,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { GoogleAuthGuard } from '../auth/google-auth.guard';
+import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import {
@@ -128,8 +128,7 @@ class TopSkillsQueryDto {
 }
 
 @ApiTags('jobs')
-@ApiBearerAuth()
-@UseGuards(GoogleAuthGuard)
+@UseGuards(SessionAuthGuard)
 @Controller('jobs')
 export class JobsController {
   constructor(private readonly jobs: JobsService) {}

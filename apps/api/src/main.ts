@@ -14,6 +14,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -24,6 +25,11 @@ async function bootstrap() {
   });
 
   app.useLogger(app.get(Logger));
+
+  // Parses incoming Cookie headers into req.cookies — required for the
+  // session auth guard and the /auth/refresh + /auth/logout endpoints to read
+  // dhruva_at / dhruva_rt.
+  app.use(cookieParser());
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -44,7 +50,9 @@ async function bootstrap() {
     .setTitle('Dhruva API')
     .setDescription('Backend API for the Dhruva — auth, CVs, jobs.')
     .setVersion('0.1.0')
-    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
+    // Session cookies are HttpOnly — Swagger can't drive them anyway, so
+    // there's no scheme to declare. Calls from the docs UI rely on the
+    // browser already having a session cookie from the running app.
     .build();
   const swaggerDoc = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, swaggerDoc);

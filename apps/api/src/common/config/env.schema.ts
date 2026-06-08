@@ -22,6 +22,19 @@ export const envSchema = z.object({
   // Required in any environment that actually serves users. Tests stub it.
   GOOGLE_CLIENT_ID: z.string().min(1),
 
+  // HMAC secret for signing session access JWTs. Must be high-entropy in any
+  // env that serves users — 32+ chars is a sane floor. Rotating this
+  // invalidates every outstanding access token (refresh tokens are unaffected
+  // since they're opaque + DB-backed).
+  JWT_SECRET: z.string().min(32),
+  // Access tokens are short so revocation latency is bounded by this window.
+  // 15 minutes is the conventional default.
+  JWT_ACCESS_TTL_MIN: z.coerce.number().int().positive().default(15),
+  // Refresh tokens live longer because that's the whole point — keeping users
+  // signed in without re-running the Google OAuth flow. 30d matches what most
+  // SaaS apps do.
+  JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
+
   AWS_REGION: z.string().default('us-east-1'),
   AWS_ACCESS_KEY_ID: z.string().min(1),
   AWS_SECRET_ACCESS_KEY: z.string().min(1),

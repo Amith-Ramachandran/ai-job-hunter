@@ -2,7 +2,7 @@
  * Param decorator that pulls the authenticated user off the request.
  *
  * Usage:
- *   @UseGuards(GoogleAuthGuard)
+ *   @UseGuards(SessionAuthGuard)
  *   @Get('me')
  *   me(@CurrentUser() user: AuthenticatedUser) { ... }
  */
