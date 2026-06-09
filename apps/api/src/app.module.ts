@@ -10,8 +10,10 @@ import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { LoggerModule } from './common/logger/logger.module';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { InternalAuthModule } from './common/internal-auth/internal-auth.module';
 import { validateEnv } from './common/config/env.schema';
 import { AuthModule } from './auth/auth.module';
+import { ChatModule } from './chat/chat.module';
 import { UsersModule } from './users/users.module';
 import { CvsModule } from './cvs/cvs.module';
 import { JobsModule } from './jobs/jobs.module';
@@ -31,6 +33,7 @@ import { HealthModule } from './health/health.module';
 
     LoggerModule,
     PrismaModule,
+    InternalAuthModule,
 
     // BullMQ shared connection — every queue in the app reuses this Redis
     // connection rather than opening its own.
@@ -50,6 +53,7 @@ import { HealthModule } from './health/health.module';
     JobsModule,
     IngestionModule,
     AiModule,
+    ChatModule,
     HealthModule,
   ],
 })

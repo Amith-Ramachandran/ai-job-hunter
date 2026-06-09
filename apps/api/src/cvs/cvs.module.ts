@@ -7,6 +7,7 @@ import { StorageModule } from './storage/storage.module';
 import { CvParserService } from './parser/cv-parser.service';
 import { CvsService } from './cvs.service';
 import { CvsController } from './cvs.controller';
+import { InternalCvsController } from './cvs.internal.controller';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { CvsController } from './cvs.controller';
     }),
   ],
   providers: [CvsService, CvParserService],
-  controllers: [CvsController],
+  controllers: [CvsController, InternalCvsController],
   exports: [CvsService],
 })
 export class CvsModule {}

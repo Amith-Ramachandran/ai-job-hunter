@@ -30,11 +30,18 @@ export class EmbedJobProcessor extends WorkerHost {
   async process(task: Job<EmbedJobJobData>) {
     const job = await this.prisma.job.findUnique({
       where: { id: task.data.jobId },
-      select: { id: true, descriptionMd: true },
+      select: { id: true, descriptionMd: true, embeddingStatus: true },
     });
     if (!job) {
       // Source job was deleted between enqueue and process — drop silently.
       this.logger.warn({ jobId: task.data.jobId }, 'Job not found, skipping embed');
+      return { skipped: true };
+    }
+    // Token-leak defence: if upstream miswires and enqueues us for an
+    // already-embedded job, we early-exit. The DB state is the source of
+    // truth, not the queue.
+    if (job.embeddingStatus === 'done') {
+      this.logger.debug({ jobId: job.id }, 'Already embedded, skipping');
       return { skipped: true };
     }
     if (!job.descriptionMd?.trim()) {

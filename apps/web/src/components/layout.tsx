@@ -9,18 +9,21 @@
  * The brand mark (star + Dhruva) anchors the top of the sidebar; the user
  * card sits at the bottom — standard SaaS-shell pattern.
  */
+import { useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import {
   Briefcase,
   FileText,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   Star,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { ChatPanel } from '@/components/chat/chat-panel';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -38,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Layout() {
   const { user, signOut } = useAuth();
+  const [chatOpen, setChatOpen] = useState(false);
   const initials = (user?.name ?? user?.email ?? '?')
     .split(/[\s@]/)
     .filter(Boolean)
@@ -52,6 +56,18 @@ export function Layout() {
         <div className="flex h-14 items-center gap-2 px-5">
           <Star className="h-5 w-5 fill-brand text-brand" />
           <span className="text-base font-semibold tracking-tight">Dhruva</span>
+        </div>
+
+        {/* Ask Dhruva — primary CTA above nav */}
+        <div className="px-3 pb-2 pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start gap-2"
+            onClick={() => setChatOpen(true)}
+          >
+            <MessageSquare className="h-4 w-4 text-brand" /> Ask Dhruva
+          </Button>
         </div>
 
         {/* Nav */}
@@ -125,6 +141,8 @@ export function Layout() {
           <Outlet />
         </div>
       </main>
+
+      <ChatPanel open={chatOpen} onOpenChange={setChatOpen} />
     </div>
   );
 }

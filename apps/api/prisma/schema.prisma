@@ -26,11 +26,41 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  cvs          Cv[]
-  applications Application[]
-  scores       JobScore[]
+  cvs           Cv[]
+  applications  Application[]
+  scores        JobScore[]
+  refreshTokens RefreshToken[]
+  chatSessions  ChatSession[]
 
   @@map("users")
+}
+
+// Server-side records for opaque refresh tokens. We never store the raw secret
+// — only a SHA-256 hash — so a DB leak doesn't hand attackers live sessions.
+//
+// On every successful refresh we rotate: the presented token is marked revoked,
+// a fresh one is issued, and `replacedById` links them. If a token that's
+// already revoked is ever presented again, that's a theft signal — we revoke
+// the entire chain for that user (forces re-login on every device).
+model RefreshToken {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  // SHA-256(hex) of the opaque secret we put in the cookie.
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  revokedAt    DateTime? @map("revoked_at")
+  // Points at the token that superseded this one on rotation. Lets us walk a
+  // chain and revoke siblings on reuse detection.
+  replacedById String?   @map("replaced_by_id")
+  // Light telemetry to help a user diagnose "what device is signed in?" later.
+  userAgent    String?   @map("user_agent")
+  ip           String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 model Cv {
@@ -64,28 +94,28 @@ enum EmbeddingStatus {
 }
 
 model Job {
-  id            String   @id @default(cuid())
-  source        String                                  // 'remotive' | 'greenhouse' | 'hn-who-is-hiring' ...
-  externalId    String   @map("external_id")            // unique within source
-  title         String
-  company       String
-  location      String?
-  remote        Boolean  @default(false)
-  salaryMin     Int?     @map("salary_min")
-  salaryMax     Int?     @map("salary_max")
-  currency      String?
+  id              String          @id @default(cuid())
+  source          String // 'remotive' | 'greenhouse' | 'hn-who-is-hiring' ...
+  externalId      String          @map("external_id") // unique within source
+  title           String
+  company         String
+  location        String?
+  remote          Boolean         @default(false)
+  salaryMin       Int?            @map("salary_min")
+  salaryMax       Int?            @map("salary_max")
+  currency        String?
   // Raw HTML/markdown from the source (kept for debugging and re-extraction).
-  descriptionRaw String  @map("description_raw") @db.Text
+  descriptionRaw  String          @map("description_raw") @db.Text
   // Cleaned markdown for display + embedding.
-  descriptionMd  String  @map("description_md") @db.Text
-  applyUrl      String   @map("apply_url")
-  postedAt      DateTime @map("posted_at")
-  ingestedAt    DateTime @default(now()) @map("ingested_at")
+  descriptionMd   String          @map("description_md") @db.Text
+  applyUrl        String          @map("apply_url")
+  postedAt        DateTime        @map("posted_at")
+  ingestedAt      DateTime        @default(now()) @map("ingested_at")
   // Structured fields from LLM extraction (Phase 2).
-  extractedJson Json?    @map("extracted_json")
+  extractedJson   Json?           @map("extracted_json")
   // Tracks the embedding lifecycle for the AI service worker (Phase 2).
   embeddingStatus EmbeddingStatus @default(pending) @map("embedding_status")
-  embeddedAt    DateTime? @map("embedded_at")
+  embeddedAt      DateTime?       @map("embedded_at")
 
   applications Application[]
   scores       JobScore[]
@@ -97,14 +127,14 @@ model Job {
 }
 
 model JobScore {
-  id              String   @id @default(cuid())
-  userId          String   @map("user_id")
-  cvId            String   @map("cv_id")
-  jobId           String   @map("job_id")
-  score           Float
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  cvId           String   @map("cv_id")
+  jobId          String   @map("job_id")
+  score          Float
   // Per-section breakdown (skills, experience, etc.) — filled by Phase 2.
-  scoreBreakdown  Json?    @map("score_breakdown")
-  computedAt      DateTime @default(now()) @map("computed_at")
+  scoreBreakdown Json?    @map("score_breakdown")
+  computedAt     DateTime @default(now()) @map("computed_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   cv   Cv   @relation(fields: [cvId], references: [id], onDelete: Cascade)
@@ -140,4 +170,69 @@ model Application {
   @@unique([userId, jobId])
   @@index([userId, status])
   @@map("applications")
+}
+
+// ─── Chat (Slice 2.3) ─────────────────────────────────────────────────────
+//
+// One ChatSession per "conversation thread" in the sidebar.
+// One ChatMessage per turn — user message, assistant reply, OR tool call/result.
+//
+// Observability fields (tokensIn/Out, latencyMs, costUsd, model) are filled on
+// every assistant message at write time. Slice 2.4's cost dashboard reads
+// straight from this table — no schema change at 2.4 time, that's the point.
+//
+// citedJobIds: when the agent's reply was grounded by retrieval results
+// (search_jobs / get_job_details tool returns), we record the referenced
+// job ids so the UI can render provenance chips.
+
+enum ChatRole {
+  user
+  assistant
+  tool
+}
+
+model ChatSession {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  // Auto-derived from the first user message (truncated). Null until the
+  // first turn lands. Editable later via a rename endpoint (Phase 3).
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([userId, updatedAt])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id          String   @id @default(cuid())
+  sessionId   String   @map("session_id")
+  role        ChatRole
+  // Free-form display text. For role=tool this is the JSON-stringified result
+  // for traceability; the UI doesn't render it directly.
+  content     String   @db.Text
+  // For role=assistant turns that invoke tools: the structured tool_calls
+  // returned by the model (id, name, args). Null otherwise.
+  toolCalls   Json?    @map("tool_calls")
+  // For role=tool messages: which tool's result this carries.
+  toolName    String?  @map("tool_name")
+  // Job ids the agent grounded its answer with. Empty by default.
+  citedJobIds String[] @default([]) @map("cited_job_ids")
+
+  // ─── Observability (Slice 2.4 plugs in here without migration) ───────
+  model     String?
+  tokensIn  Int?     @map("tokens_in")
+  tokensOut Int?     @map("tokens_out")
+  latencyMs Int?     @map("latency_ms")
+  costUsd   Decimal? @map("cost_usd") @db.Decimal(10, 6)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
 }

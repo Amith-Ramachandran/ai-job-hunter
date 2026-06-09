@@ -22,6 +22,19 @@ export const envSchema = z.object({
   // Required in any environment that actually serves users. Tests stub it.
   GOOGLE_CLIENT_ID: z.string().min(1),
 
+  // HMAC secret for signing session access JWTs. Must be high-entropy in any
+  // env that serves users — 32+ chars is a sane floor. Rotating this
+  // invalidates every outstanding access token (refresh tokens are unaffected
+  // since they're opaque + DB-backed).
+  JWT_SECRET: z.string().min(32),
+  // Access tokens are short so revocation latency is bounded by this window.
+  // 15 minutes is the conventional default.
+  JWT_ACCESS_TTL_MIN: z.coerce.number().int().positive().default(15),
+  // Refresh tokens live longer because that's the whole point — keeping users
+  // signed in without re-running the Google OAuth flow. 30d matches what most
+  // SaaS apps do.
+  JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
+
   AWS_REGION: z.string().default('us-east-1'),
   AWS_ACCESS_KEY_ID: z.string().min(1),
   AWS_SECRET_ACCESS_KEY: z.string().min(1),
@@ -34,6 +47,13 @@ export const envSchema = z.object({
     .transform((v) => v === 'true'),
 
   AI_SERVICE_URL: z.string().url().default('http://localhost:8000'),
+
+  // Shared secret for internal service-to-service calls between Nest and the
+  // Python AI service. Carried as `Authorization: Bearer <token>` on calls
+  // the Python tools make back into Nest (since Python can't read the user's
+  // HttpOnly session cookie). Must be high-entropy in production; 32+ chars.
+  // In dev a sensible default keeps boot frictionless.
+  INTERNAL_SERVICE_TOKEN: z.string().min(16).default('dev-only-internal-token-please-rotate'),
 
   // How far back to fetch on ingestion. Even on an empty DB, the cutoff is
   // applied so we never burn API quota / OpenAI tokens on stale postings.

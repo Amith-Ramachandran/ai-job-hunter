@@ -9,11 +9,12 @@ The user-facing app: sign in with Google, upload a CV, browse jobs.
 | Bundler | Vite | Fast dev, modern default |
 | Styling | Tailwind CSS + shadcn/ui | Restrained, "classy" design tokens; we own the UI components (no library lock-in) |
 | Server state | TanStack Query | All `/api` data goes through `useQuery` / `useMutation` — caching + invalidation in one place |
-| Client state | Zustand (persisted) | Auth token + cached user; reads don't cause unrelated re-renders |
+| Client state | Zustand (non-persisted for auth) | Cached user record; auth state lives in HTTPOnly cookies (no token in JS-reachable storage) |
 | Forms | react-hook-form + zod | Schema-driven validation; resolver glue is one line |
 | Routing | React Router v6 | Standard |
-| OAuth | @react-oauth/google | Wraps Google's Identity SDK in a React-friendly API |
-| HTTP | axios | Bearer-token interceptor + 401-handling in one place (`src/lib/api.ts`) |
+| OAuth | @react-oauth/google | One-time Google ID-token grab → exchanged at `/auth/google` for a cookie session |
+| HTTP | axios | `withCredentials: true` + a 401 interceptor that fires `/auth/refresh` once before failing |
+| Markdown | `react-markdown` + `remark-gfm` | Assistant chat bubbles render markdown; user bubbles stay plain text |
 
 ## Source map
 
@@ -22,32 +23,37 @@ src/
 ├── main.tsx                # providers (OAuth, Query, Router) + bootstrap
 ├── App.tsx                 # routes (login, dashboard, cv-upload, jobs)
 ├── lib/
-│   ├── api.ts              # axios + typed endpoints; Job.matchScore, SortBy/SortOrder types
+│   ├── api.ts              # axios (withCredentials) + typed endpoints; ChatStreamEvent
+│   │                       # discriminated union; streamChatTurn + streamCoverLetter
+│   │                       # async-generators built on fetch + ReadableStream (EventSource
+│   │                       # doesn't support POST + cookies)
 │   └── utils.ts            # cn(), formatBytes, formatRelativeTime
 ├── stores/
-│   └── auth.store.ts       # Zustand: idToken + user, persisted to localStorage
+│   └── auth.store.ts       # Zustand: cached user record (no token — cookie-only)
 ├── hooks/
 │   └── use-auth.ts         # combines store + /auth/me query
 ├── components/
-│   ├── layout.tsx          # authenticated app shell (header + content)
+│   ├── layout.tsx          # authenticated app shell (sidebar + content + "Ask Dhruva" CTA)
 │   ├── protected-route.tsx # redirects to /login if unauthenticated
-│   └── ui/                 # shadcn primitives (button, input, card)
+│   ├── chat/
+│   │   ├── chat-panel.tsx        # slide-in chat sidebar (Sheet) — sessions rail +
+│   │   │                         # streaming message list + markdown bubbles + citations
+│   │   └── cover-letter-button.tsx # per-jobs-row icon button → streamed cover-letter Sheet
+│   └── ui/                 # shadcn primitives (button, input, card, sheet, …)
 └── pages/
     ├── login.tsx
     ├── dashboard.tsx
     ├── cv-upload.tsx       # form via react-hook-form + zod; mutation invalidates ['cvs']
-    └── jobs.tsx            # sortable column headers, Match column with colored badge
+    └── jobs.tsx            # sortable column headers, Match column, cover-letter button per row
 ```
 
 ## Auth model
 
 1. User clicks Google sign-in (`pages/login.tsx` → `<GoogleLogin />`).
-2. Google returns an ID token. We `jwtDecode` it for basic claims and store `{ idToken, user }` in Zustand (persisted).
-3. Every API call attaches `Authorization: Bearer <idToken>` via the axios interceptor.
-4. The Nest API verifies the token with Google's public keys on every request.
-5. On 401 from any endpoint, the interceptor calls `signOut()`. ProtectedRoute then redirects to `/login`.
-
-There is no refresh-token flow. Google ID tokens are valid for ~1h; once expired, the user signs in again. This is a deliberate simplification — adding refresh (via `google.accounts.id.prompt()` silent re-auth) is a planned polish item if the 1-hour re-login becomes annoying.
+2. We POST the Google ID token once to `/auth/google`.
+3. Nest verifies it with Google, mints two HTTPOnly cookies — a short-lived access JWT and an opaque refresh token — and sets them on the response.
+4. Every subsequent `/api/*` call rides on the cookies (`withCredentials: true` on axios). Nothing token-shaped ever touches `localStorage`.
+5. On a 401 the axios interceptor calls `/auth/refresh` exactly once and retries the original request. If the refresh itself 401s, we clear local user state and the ProtectedRoute redirects to `/login`. Refresh tokens are rotated server-side with reuse detection — a leaked refresh token gets the whole session burned the next time it's used.
 
 ## Match scoring (Slice 2.1)
 
@@ -61,6 +67,17 @@ The Jobs page filter row exposes the LLM-extracted structured fields as chips:
 - **Required skills** — typeahead pulling from `/jobs/top-skills`; AND semantics (every selected skill must appear in the JD's `required_skills`)
 
 Active filters show in a strip with one-click "Clear all". Each row also surfaces the first 5 extracted skills as inline badges + overflow count.
+
+## Chat & cover-letters (Slice 2.3)
+
+**Ask Dhruva** — a slide-in chat panel (Sheet) with a sessions rail on the left and a streaming conversation on the right:
+- Sessions are server-persisted in Postgres (`chat_sessions` + `chat_messages`); the panel re-fetches on open so other tabs / the freshly-streamed session show up.
+- The composer drives `streamChatTurn()`, an async generator that consumes the SSE stream via `fetch` + `ReadableStream` (EventSource doesn't support POST + cookies). Tokens accumulate into a `streamingText` state while the optimistic user bubble + the partial assistant bubble render side-by-side; the session re-fetch is **gated behind `!isStreaming`** so the persisted user message and the optimistic one can't briefly both render.
+- Assistant bubbles render via `react-markdown` + `remark-gfm` (lists, links, inline code, bold). User bubbles stay plain text so user-typed markdown isn't accidentally rendered.
+- Citation chips (truncated job IDs) appear under any assistant turn that called a job-fetching tool.
+- The panel uses an `AbortController` so closing the Sheet mid-stream cleanly tears the SSE down.
+
+**Cover-letter button** — a per-Jobs-row icon button. Opens a Sheet that streams a tailored draft (CV-grounded, JD-grounded, single LLM call — no agent loop). The Sheet has Copy + Regenerate actions; cancellation behaves like the chat panel.
 
 ## Visual style
 

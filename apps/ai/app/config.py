@@ -32,5 +32,17 @@ class Settings(BaseSettings):
     qdrant_cv_collection: str = "cv_chunks"
     qdrant_job_collection: str = "job_chunks"
 
+    # ─── Chat / agent (Slice 2.3) ──────────────────────────
+    # Model used for the chat agent's reasoning + responses. gpt-4o-mini is
+    # the cost-effective default; bump to gpt-4o if eval shows we need it.
+    openai_chat_model: str = "gpt-4o-mini"
+    # Model used for cover-letter drafts. We use the same as chat by default;
+    # decoupled so we can A/B differently later.
+    openai_cover_letter_model: str = "gpt-4o-mini"
+    # Base URL for calling back into the Nest API from agent tools.
+    nest_api_url: str = "http://localhost:3000"
+    # Shared bearer for /internal/* endpoints. MUST match the Nest side.
+    internal_service_token: str = Field(..., min_length=16)
+
 
 settings = Settings()

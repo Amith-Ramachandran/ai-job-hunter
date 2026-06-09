@@ -9,15 +9,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { GoogleAuthGuard } from '../auth/google-auth.guard';
+import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import { CvsService } from './cvs.service';
 
 @ApiTags('cvs')
-@ApiBearerAuth()
-@UseGuards(GoogleAuthGuard)
+@UseGuards(SessionAuthGuard)
 @Controller('cvs')
 export class CvsController {
   constructor(private readonly cvs: CvsService) {}

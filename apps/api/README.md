@@ -4,12 +4,14 @@ The HTTP API and background worker for Dhruva.
 
 ## Responsibilities
 
-- **Auth**: verifies Google ID tokens, upserts the local user record
+- **Auth**: exchanges a Google ID token for a server-side session — HTTPOnly access JWT (short-lived) + rotating opaque refresh token with reuse detection
 - **CV storage**: accepts uploads, writes to S3 (LocalStack in dev), records metadata in Postgres
 - **CV parsing**: extracts text from PDF / TXT via `pdf-parse` so embeddings have real content to work with
 - **Job catalog**: serves the filtered/paginated/sortable jobs list to the frontend; joins per-job match scores from `job_scores` for the user's latest CV
 - **Ingestion**: scheduled BullMQ workers fetch from 5 job sources and upsert into Postgres
-- **AI orchestration**: BullMQ queues (`embed-cv`, `embed-job`, `score-cv`) call the Python AI service over HTTP; admin endpoints for backfill and manual re-score
+- **AI orchestration**: BullMQ queues (`embed-cv`, `embed-job`, `extract-job`, `score-cv`) call the Python AI service over HTTP; admin endpoints for backfill and manual re-score
+- **Chat**: SSE proxy from Python `/chat` → the browser, plus persistence of every turn (model / tokens_in / tokens_out / latency_ms / cost_usd) into `chat_messages`
+- **Internal service surface**: `/internal/*` endpoints for the Python AI service, guarded by a shared bearer with constant-time compare
 - **Health probes**: `/health/live` and `/health/ready`
 
 ## Module map
@@ -22,14 +24,23 @@ src/
 │   ├── config/env.schema.ts      # zod validation of env vars
 │   ├── logger/                   # Pino setup
 │   └── prisma/                   # PrismaService
-├── auth/                         # Google ID token verification + guard
+├── common/
+│   ├── internal-auth/            # InternalAuthGuard — shared-bearer auth for Python → Nest /internal/*
+│   ├── session-auth/             # SessionAuthGuard — cookie-based session validation
+│   └── ...                       # config, logger, prisma
+├── auth/                         # Google ID-token exchange → cookie session; /auth/refresh; reuse detection
 ├── users/                        # /users/me
 ├── cvs/
 │   ├── cvs.service.ts            # upload + list + presigned download URL; enqueues embed-cv
 │   ├── cvs.controller.ts         # /cvs endpoints incl. POST /cvs/:id/reparse
+│   ├── cvs.internal.controller.ts # /internal/cvs/:userId/latest (called by Python)
 │   ├── parser/cv-parser.service.ts  # pdf-parse + text/plain extractor
 │   └── storage/s3-storage.service.ts  # AWS SDK against LocalStack or real S3
-├── jobs/                         # /jobs list + filters; joins job_scores for matchScore field
+├── jobs/
+│   ├── jobs.controller.ts        # /jobs list + filters; joins job_scores for matchScore field
+│   ├── jobs.internal.controller.ts # /internal/jobs + /internal/jobs/:id (called by Python tools)
+│   └── jobs.repository.ts        # single chokepoint for upserts; descriptionMd-change guard
+│                                 #   stops the embed/extract pipeline from firing on unchanged jobs
 ├── ingestion/
 │   ├── ingestion.service.ts      # orchestrator, schedules BullMQ tasks; enqueues embed-job
 │   ├── ingestion.processor.ts    # BullMQ worker
@@ -43,6 +54,12 @@ src/
 │   ├── embed-job.processor.ts    # worker — calls /embed/job, marks embedding_status
 │   ├── extract-job.processor.ts  # worker — calls /extract/job, writes extracted_json
 │   └── score-cv.processor.ts     # worker — calls /score/cv, writes job_scores rows
+├── chat/                         # Phase 2 Slice 2.3
+│   ├── chat.controller.ts        # POST /chat/stream, /chat/cover-letter (both SSE);
+│   │                             # GET/DELETE /chat/sessions[/:id]
+│   ├── chat.service.ts           # AsyncIterable proxy of Python SSE → DB write of the final
+│   │                             # assistant message with model + tokens + cost + latency
+│   └── chat.constants.ts         # MODEL_PRICING table + computeCostUsd() helper
 └── health/                       # /health/* endpoints
 ```
 
@@ -99,6 +116,32 @@ See `.env.example`. The app refuses to start if any required value is missing �
 
 All four queues share `STANDARD_RETRY` in `ai.service.ts`: 3 attempts, 30s exponential backoff, `removeOnFail: true` (auto-removes after final retry so a stuck failed job doesn't block future enqueues via the jobId dedupe).
 
-Ingestion is capped at the last `INGESTION_MAX_AGE_DAYS` (default 7) so we don't burn OpenAI tokens on stale postings.
+Re-ingestion is **token-leak-guarded**: the `JobsRepository.upsert` chokepoint only resets `embedding_status='pending'` + `extracted_json=null` when `descriptionMd` actually changed since the last ingest. Hourly re-ingestion of an unchanged corpus now costs ~$0 instead of ~$5/day.
+
+Ingestion is also capped at the last `INGESTION_MAX_AGE_DAYS` (default 7) so we don't burn OpenAI tokens on stale postings.
 
 The `AI_SERVICE_URL` env var points at the Python service (default `http://localhost:8000`).
+
+## Chat (Slice 2.3 — shipped)
+
+| Endpoint | Auth | Behaviour |
+|---|---|---|
+| `POST /chat/stream` | session cookie | Streams Python `POST /chat/` through verbatim as SSE; writes the assistant message at end-of-stream with model / tokens_in / tokens_out / latency_ms / cost_usd into `chat_messages` |
+| `POST /chat/cover-letter` | session cookie | Streams Python `POST /chat/cover-letter` SSE through to the browser |
+| `GET /chat/sessions` | session cookie | List the user's chat sessions (most-recent-first) |
+| `GET /chat/sessions/:id` | session cookie | Full message history for one session |
+| `DELETE /chat/sessions/:id` | session cookie | Cascade-delete session + its messages |
+
+Pricing for cost computation lives in `chat/chat.constants.ts` (`MODEL_PRICING`) so adding a model = one line.
+
+### Internal service surface
+
+The Python service calls **back into Nest** for data it doesn't own (jobs, CVs). Python can't see browser cookies, so those routes use a shared bearer:
+
+| Endpoint | Caller | Purpose |
+|---|---|---|
+| `GET /internal/jobs` | Python `search_jobs` tool | Same filter shape as the public `/jobs`, but takes `userId` as a query param instead of reading the session cookie |
+| `GET /internal/jobs/:id` | Python `get_job_details` tool | Single-job fetch with the full descriptionMd + extractedJson |
+| `GET /internal/cvs/:userId/latest` | Python cover-letter pipeline | Latest CV's parsedText for the user |
+
+Guard: `InternalAuthGuard` does a constant-time compare against `INTERNAL_SERVICE_TOKEN` (must be ≥16 chars, must match in both `apps/api/.env` and `apps/ai/.env`).

@@ -1,15 +1,14 @@
 """AI service entry point.
 
 Endpoints:
-    GET  /health/live     liveness
-    GET  /health/ready    readiness (Qdrant reachable)
-    POST /embed/cv        chunk + embed CV text → Qdrant
-    POST /embed/job       chunk + embed JD text → Qdrant
-    POST /score/cv        compute per-job match scores for one CV
-    POST /extract/job     LLM-driven structured-JSON extraction from a JD
-
-Future slice 2.3 adds:
-    POST /chat            tool-calling agent over the user's pipeline
+    GET  /health/live          liveness
+    GET  /health/ready         readiness (Qdrant reachable)
+    POST /embed/cv             chunk + embed CV text → Qdrant
+    POST /embed/job            chunk + embed JD text → Qdrant
+    POST /score/cv             compute per-job match scores for one CV
+    POST /extract/job          LLM-driven structured-JSON extraction from a JD
+    POST /chat                 tool-calling agent over the user's pipeline (SSE)
+    POST /chat/cover-letter    tailored cover-letter draft (SSE)
 """
 
 from contextlib import asynccontextmanager
@@ -19,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import embed, extract, health, score
+from app.routers import chat, embed, extract, health, score
 from app.vector_store import get_vector_store
 
 structlog.configure(
@@ -27,6 +26,11 @@ structlog.configure(
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
+        # format_exc_info converts exc_info=True into a rendered `exception`
+        # string field. Without it, `log.exception(...)` only emits
+        # `exc_info: true` and the traceback is lost — which is what bit us
+        # when the agent stream failed silently.
+        structlog.processors.format_exc_info,
         structlog.processors.JSONRenderer(),
     ],
 )
@@ -63,3 +67,4 @@ app.include_router(health.router)
 app.include_router(embed.router)
 app.include_router(score.router)
 app.include_router(extract.router)
+app.include_router(chat.router)
