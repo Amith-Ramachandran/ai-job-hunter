@@ -27,7 +27,6 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   cvs           Cv[]
-  applications  Application[]
   scores        JobScore[]
   refreshTokens RefreshToken[]
   chatSessions  ChatSession[]
@@ -117,8 +116,7 @@ model Job {
   embeddingStatus EmbeddingStatus @default(pending) @map("embedding_status")
   embeddedAt      DateTime?       @map("embedded_at")
 
-  applications Application[]
-  scores       JobScore[]
+  scores JobScore[]
 
   @@unique([source, externalId])
   @@index([postedAt])
@@ -143,33 +141,6 @@ model JobScore {
   @@unique([userId, cvId, jobId])
   @@index([userId, score])
   @@map("job_scores")
-}
-
-enum ApplicationStatus {
-  saved
-  applied
-  interviewing
-  offer
-  rejected
-  withdrawn
-}
-
-model Application {
-  id        String            @id @default(cuid())
-  userId    String            @map("user_id")
-  jobId     String            @map("job_id")
-  status    ApplicationStatus @default(saved)
-  notes     String?           @db.Text
-  appliedAt DateTime?         @map("applied_at")
-  createdAt DateTime          @default(now()) @map("created_at")
-  updatedAt DateTime          @updatedAt @map("updated_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, jobId])
-  @@index([userId, status])
-  @@map("applications")
 }
 
 // ─── Chat (Slice 2.3) ─────────────────────────────────────────────────────

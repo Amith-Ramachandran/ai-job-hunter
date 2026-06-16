@@ -17,7 +17,7 @@ A personal AI-powered job-hunt assistant. Ingests jobs from public sources, rank
 │  NestJS API                                                  │
 │  • Cookie sessions: short-lived access JWT + rotating        │
 │    opaque refresh tokens (with reuse detection)              │
-│  • Owns: users, cvs, jobs, applications, job_scores,         │
+│  • Owns: users, cvs, jobs, job_scores,                       │
 │    chat_sessions, chat_messages (model/tokens/cost/latency)  │
 │  • Owns: BullMQ queues — ingest-jobs / embed-cv /            │
 │    embed-job / extract-job / score-cv                        │
